@@ -635,12 +635,26 @@ export default function App() {
 
       setPokedex(pd);
       setEvoMap(em);
+      // Compute starters now while we have local refs — don't rely on state flush
+      const starterList = REGIONS[rKey].starters.map(id => {
+        let cur = id;
+        let safety = 0;
+        while (em[cur] && safety++ < 10) {
+          const [nextId, minLvl] = em[cur];
+          if (5 >= minLvl) cur = nextId; else break;
+        }
+        const base = pd[cur] || pd[id];
+        return base ? { ...base, level: 5, baseId: id } : null;
+      }).filter(Boolean);
+      setStarterOpts(starterList);
       setLoadState("ready");
       setLoadMsg("");
+      return { pd, em };
     } catch (e) {
       console.error(e);
       setLoadState("error");
       setLoadMsg(e.message || "Network error");
+      return null;
     }
   }
 
@@ -900,7 +914,7 @@ export default function App() {
   const base = { minHeight: "100vh", fontFamily: "'Inter',system-ui,sans-serif", background: "#F8FAFC" };
 
   // ── SETUP ──
-  if (screen === "setup") return (
+  if (screen === "setup" && loadState !== "ready") return (
     <div style={{ ...base, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ maxWidth: 440, width: "100%", padding: 32 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", color: "#E53935", textTransform: "uppercase", marginBottom: 8 }}>Nuzlocke Simulator</div>
@@ -924,13 +938,9 @@ export default function App() {
           </div>
         )}
 
-        <button onClick={async () => {
-          await loadAllData(regionKey);
-          // After loading, show starter picker
-          setLoadState(prev => {
-            return prev; // will be set by loadAllData
-          });
-        }} disabled={loadState === "loading"} style={{ width: "100%", padding: "16px 0", background: loadState === "loading" ? "#9CA3AF" : "#E53935", color: "#fff", border: "none", borderRadius: 12, fontWeight: 800, fontSize: 16, cursor: loadState === "loading" ? "not-allowed" : "pointer" }}>
+        <button onClick={() => { if (loadState === "idle" || loadState === "error") loadAllData(regionKey); }}
+          disabled={loadState === "loading"}
+          style={{ width: "100%", padding: "16px 0", background: loadState === "loading" ? "#9CA3AF" : "#E53935", color: "#fff", border: "none", borderRadius: 12, fontWeight: 800, fontSize: 16, cursor: loadState === "loading" ? "not-allowed" : "pointer" }}>
           {loadState === "loading" ? loadMsg || "Loading…" : "Begin Adventure →"}
         </button>
       </div>
@@ -942,16 +952,9 @@ export default function App() {
     // handled below
   }
 
-  // Transition: when loading finishes, show starter screen
-  useEffect(() => {
-    if (loadState === "ready" && screen === "setup") {
-      const opts = region.starters.map(id => getPokemonAtLevel(id, 5)).filter(Boolean);
-      setStarterOpts(opts);
-      setScreen("starter");
-    }
-  }, [loadState]);
+  // (starter screen transition is handled directly in the button's onClick)
 
-  if (screen === "starter") return (
+  if (screen === "starter" || (screen === "setup" && loadState === "ready")) return (
     <div style={{ ...base, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ maxWidth: 480, width: "100%", padding: 32 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", color: "#E53935", textTransform: "uppercase", marginBottom: 8 }}>{region.name}</div>
