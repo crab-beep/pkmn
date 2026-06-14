@@ -86,24 +86,21 @@ const PHYSICAL_TYPES = new Set(["normal","fighting","flying","poison","ground","
 // Remaining are special: fire, water, grass, electric, ice, psychic, dragon, dark, fairy
 
 // Returns best {atk, atkStat, defStat, type, isPhysical} for attacker vs defender
+// Each pokemon has one physical + one special move of each type (70 BP)
 function bestMove(attacker, defender, aLevel, dLevel) {
   const BP = 70;
   const aAtk  = calcStat(attacker.baseAtk,   aLevel);
   const aSpAtk = calcStat(attacker.baseSpAtk, aLevel);
   const dDef   = calcStat(defender.baseDef,   dLevel);
   const dSpDef = calcStat(defender.baseSpDef, dLevel);
-  const item = attacker.heldItem ? ITEMS[attacker.heldItem] : null;
 
   let bestDmg = -1, bestResult = null;
   for (const type of attacker.types) {
     const isPhys = PHYSICAL_TYPES.has(type);
-    let A = isPhys ? aAtk : aSpAtk;
+    const A = isPhys ? aAtk : aSpAtk;
     const D = isPhys ? dDef : dSpDef;
-    // Item boosts
-    if (item?.typeBoost === type) A = Math.floor(A * item.boost);
-    if (item?.id === "muscleband" && isPhys) A = Math.floor(A * 1.1);
-    if (item?.id === "wiseglasses" && !isPhys) A = Math.floor(A * 1.1);
     const eff = effectiveness(type, defender.types);
+    // Base damage formula (no random yet, find best)
     const dmgBase = Math.floor(((2 * aLevel / 5 + 2) * BP * A / D) / 50) + 2;
     const finalDmg = Math.floor(dmgBase * eff);
     if (finalDmg > bestDmg) {
@@ -115,21 +112,12 @@ function bestMove(attacker, defender, aLevel, dLevel) {
 }
 
 // Final damage with random roll [0.85, 1.0] and crit
-function calcDamage(attacker, defender, aLevel, dLevel, battleState) {
+function calcDamage(attacker, defender, aLevel, dLevel) {
   const move = bestMove(attacker, defender, aLevel, dLevel);
   if (!move) return { val: 5, crit: false, eff: 1, type: attacker.types[0] };
-  const item = attacker.heldItem ? ITEMS[attacker.heldItem] : null;
   const crit = Math.random() < 0.0625;
   const roll = 0.85 + Math.random() * 0.15;
-  let dmg = move.dmgBase * move.eff * roll;
-  // Life Orb
-  if (item?.id === "lifeorb") dmg *= 1.3;
-  // Power Herb — first attack only
-  if (item?.id === "powerherb" && battleState && !battleState.powerHerbUsed) {
-    dmg *= 1.5;
-    battleState.powerHerbUsed = true;
-  }
-  const val = Math.max(1, Math.floor(dmg * (crit ? 1.5 : 1)));
+  const val = Math.max(1, Math.floor(move.dmgBase * move.eff * roll * (crit ? 1.5 : 1)));
   return { val, crit, eff: move.eff, type: move.type };
 }
 
@@ -183,58 +171,6 @@ function randomizeId(originalId, pokedex, allIds, mode) {
   const bucket = candidates.filter(id => Math.abs(pokedex[id].bst - bst) / bst < 0.15);
   const pool = bucket.length ? bucket : candidates;
   return pool[Math.floor(Math.random() * pool.length)];
-}
-
-
-// ─── ITEMS ────────────────────────────────────────────────────────────────────
-const TYPE_BOOST_ITEMS = {
-  "Charcoal":      {type:"fire",     emoji:"🪵", boost:1.2},
-  "Mystic Water":  {type:"water",    emoji:"💧", boost:1.2},
-  "Miracle Seed":  {type:"grass",    emoji:"🌱", boost:1.2},
-  "Magnet":        {type:"electric", emoji:"🧲", boost:1.2},
-  "NeverMeltIce":  {type:"ice",      emoji:"🧊", boost:1.2},
-  "Black Belt":    {type:"fighting", emoji:"🥋", boost:1.2},
-  "Poison Barb":   {type:"poison",   emoji:"☠️", boost:1.2},
-  "Soft Sand":     {type:"ground",   emoji:"🏜️", boost:1.2},
-  "Sharp Beak":    {type:"flying",   emoji:"🪶", boost:1.2},
-  "Twisted Spoon": {type:"psychic",  emoji:"🥄", boost:1.2},
-  "Silver Powder": {type:"bug",      emoji:"🦋", boost:1.2},
-  "Hard Stone":    {type:"rock",     emoji:"🪨", boost:1.2},
-  "Spell Tag":     {type:"ghost",    emoji:"👻", boost:1.2},
-  "Dragon Fang":   {type:"dragon",   emoji:"🐉", boost:1.2},
-  "Black Glasses": {type:"dark",     emoji:"🕶️", boost:1.2},
-  "Metal Coat":    {type:"steel",    emoji:"⚙️", boost:1.2},
-  "Pink Bow":      {type:"normal",   emoji:"🎀", boost:1.2},
-  "Fairy Feather": {type:"fairy",    emoji:"🧚", boost:1.2},
-};
-
-const ITEMS = {
-  // Continuous
-  "Leftovers":   { id:"leftovers",   emoji:"🍃", desc:"Recovers 6% HP at end of each round.", kind:"continuous" },
-  "Life Orb":    { id:"lifeorb",     emoji:"🔮", desc:"Attacks deal 1.3× damage; holder loses 10% HP per attack.", kind:"continuous" },
-  "Rocky Helmet":{ id:"rockyhelmet", emoji:"⛑️",  desc:"Attacker loses 6% HP when hitting this Pokémon.", kind:"continuous" },
-  "Muscle Band": { id:"muscleband",  emoji:"💪", desc:"Physical moves deal 1.1× damage.", kind:"continuous" },
-  "Wise Glasses":{ id:"wiseglasses", emoji:"🔬", desc:"Special moves deal 1.1× damage.", kind:"continuous" },
-  // One-use per battle
-  "Sitrus Berry":{ id:"sitrusberry", emoji:"🍊", desc:"Restores 25% HP when HP drops below 50% (once per battle).", kind:"once" },
-  "Focus Sash":  { id:"focussash",   emoji:"🎽", desc:"Survives any one-hit KO at 1 HP (once per battle).", kind:"once" },
-  "Shell Bell":  { id:"shellbell",   emoji:"🔔", desc:"Restores HP equal to 1/8 of damage dealt per hit.", kind:"continuous" },
-  "Power Herb":  { id:"powerherb",   emoji:"🌿", desc:"First attack of the battle deals 1.5× damage (once per battle).", kind:"once" },
-  // Type boosts added dynamically
-  ...Object.fromEntries(Object.entries(TYPE_BOOST_ITEMS).map(([name, d]) => [name, { id:name.toLowerCase().replace(/ /g,""), emoji:d.emoji, desc:`${name.includes("Glasses")||name.includes("Belt")||name.includes("Bow")||name.includes("Barb")||name.includes("Tag")||name.includes("Beak")||name.includes("Feather")||name.includes("Sand")||name.includes("Band")||name.includes("Spoon")||name.includes("Powder")||name.includes("Coat")||name.includes("Fang")||name.includes("Magnet")||name.includes("Seed")||name.includes("Stone")||name.includes("Water")||name.includes("Ice")?name:name}: Boosts ${d.type}-type moves by 20%.`, kind:"continuous", typeBoost:d.type, boost:d.boost }])),
-};
-const ALL_ITEM_NAMES = Object.keys(ITEMS);
-
-// Pick 3 random items for the shop, respecting type-boost party filter
-function pickShopItems(party) {
-  const partyTypes = new Set(party.flatMap(p => p.types));
-  const eligible = ALL_ITEM_NAMES.filter(name => {
-    const item = ITEMS[name];
-    if (item.typeBoost) return partyTypes.has(item.typeBoost);
-    return true;
-  });
-  const shuffled = eligible.sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, 3);
 }
 
 // ─── GAME DATA ────────────────────────────────────────────────────────────────
@@ -380,15 +316,12 @@ const SPECIAL_EVENTS = [
   {id:"rival",    label:"🏆 Rival Battle",     desc:"Your rival shows up. +4 bonus levels until next gym.", effect:"bonus", value:4},
   {id:"trade",    label:"🔄 Mystery Trade",    desc:"A trainer offers a trade for one of your Pokémon.", effect:"trade"},
   {id:"gift",     label:"🎁 Injured Pokémon",  desc:"You found a hurt Pokémon and nursed it back. It wants to join!", effect:"gift"},
-  {id:"shop",     label:"🛍️ Item Shop",        desc:"A travelling merchant offers you a held item!", effect:"shop"},
 ];
 
 // ─── BATTLE SIM ───────────────────────────────────────────────────────────────
 function simulateBattle(playerTeam, enemyTeam, style = "between") {
-  const pTeam = playerTeam.map(p => ({ ...p, curHp: calcStat(p.baseHp || p.hp, p.level, true), alive: true,
-    _sitrusUsed: false, _sashUsed: false, _powerHerbUsed: false }));
-  const eTeam = enemyTeam.map(e => ({ ...e, curHp: calcStat(e.baseHp || e.hp, e.level, true), alive: true,
-    _sitrusUsed: false, _sashUsed: false, _powerHerbUsed: false }));
+  const pTeam = playerTeam.map(p => ({ ...p, curHp: calcStat(p.baseHp || p.hp, p.level, true), alive: true }));
+  const eTeam = enemyTeam.map(e => ({ ...e, curHp: calcStat(e.baseHp || e.hp, e.level, true), alive: true }));
   // Store max HP for display
   pTeam.forEach(p => { p.maxHp = p.curHp; });
   eTeam.forEach(e => { e.maxHp = e.curHp; });
@@ -452,54 +385,13 @@ function simulateBattle(playerTeam, enemyTeam, style = "between") {
     const pFirst = calcStat(P.baseSpeed || P.speed, P.level) >= calcStat(E.baseSpeed || E.speed, E.level);
     const [first, second, fIsP] = pFirst ? [P, E, true] : [E, P, false];
 
-    // ── Item: Power Herb state ──
-    const pBs = { powerHerbUsed: P._powerHerbUsed };
-    const eBs = { powerHerbUsed: E._powerHerbUsed };
-
     // First strike
-    const r1 = calcDamage(first, second, first.level, second.level, fIsP ? pBs : eBs);
-    if (fIsP) P._powerHerbUsed = pBs.powerHerbUsed;
-    else E._powerHerbUsed = eBs.powerHerbUsed;
-
-    // ── Item: Life Orb recoil on attacker ──
-    if (first.heldItem && ITEMS[first.heldItem]?.id === "lifeorb") {
-      const recoil = Math.max(1, Math.floor(first.maxHp * 0.10));
-      first.curHp = Math.max(0, first.curHp - recoil);
-    }
-    // ── Item: Rocky Helmet recoil on second ──
-    if (second.heldItem && ITEMS[second.heldItem]?.id === "rockyhelmet") {
-      const recoil = Math.max(1, Math.floor(first.maxHp * 0.06));
-      first.curHp = Math.max(0, first.curHp - recoil);
-    }
-    // ── Item: Shell Bell heal on first ──
-    if (first.heldItem && ITEMS[first.heldItem]?.id === "shellbell") {
-      first.curHp = Math.min(first.maxHp, first.curHp + Math.max(1, Math.floor(r1.val / 8)));
-    }
-
-    // ── Focus Sash: survive lethal hit ──
-    if (second.curHp - r1.val <= 0 && second.curHp === second.maxHp && !second._sashUsed && second.heldItem && ITEMS[second.heldItem]?.id === "focussash") {
-      second._sashUsed = true;
-      second.curHp = 1;
-      pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(), playerAttacking:fIsP, enemyAttacking:!fIsP,
-        message:`${first.displayName} → ${second.displayName}${effLabel(r1.eff, r1.crit)} — Focus Sash!`, msgColor:"#FBBF24" });
-    } else {
-      second.curHp = Math.max(0, second.curHp - r1.val);
-      pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(),
-        playerAttacking:fIsP, enemyAttacking:!fIsP,
-        message:`${first.displayName} → ${second.displayName}${effLabel(r1.eff, r1.crit)}`,
-        msgColor: msgColor(r1.eff, r1.crit) });
-    }
-
-    // ── Sitrus Berry ──
-    function checkSitrus(mon) {
-      if (mon.heldItem && ITEMS[mon.heldItem]?.id === "sitrusberry" && !mon._sitrusUsed && mon.curHp / mon.maxHp < 0.5 && mon.curHp > 0) {
-        mon._sitrusUsed = true;
-        const heal = Math.floor(mon.maxHp * 0.25);
-        mon.curHp = Math.min(mon.maxHp, mon.curHp + heal);
-        pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(), message:`${mon.displayName} ate its Sitrus Berry! (+${heal} HP)`, msgColor:"#4ADE80" });
-      }
-    }
-    checkSitrus(second); checkSitrus(first);
+    const r1 = calcDamage(first, second, first.level, second.level);
+    second.curHp = Math.max(0, second.curHp - r1.val);
+    pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(),
+      playerAttacking:fIsP, enemyAttacking:!fIsP,
+      message:`${first.displayName} → ${second.displayName}${effLabel(r1.eff, r1.crit)}`,
+      msgColor: msgColor(r1.eff, r1.crit) });
 
     if (second.curHp <= 0) {
       second.alive = false;
@@ -519,43 +411,12 @@ function simulateBattle(playerTeam, enemyTeam, style = "between") {
 
     // Second strike
     if (!first.alive || !second.alive) continue;
-    const r2 = calcDamage(second, first, second.level, first.level, fIsP ? eBs : pBs);
-    if (!fIsP) P._powerHerbUsed = pBs.powerHerbUsed;
-    else E._powerHerbUsed = eBs.powerHerbUsed;
-
-    // Life Orb / Rocky Helmet / Shell Bell for second striker
-    if (second.heldItem && ITEMS[second.heldItem]?.id === "lifeorb") {
-      second.curHp = Math.max(0, second.curHp - Math.max(1, Math.floor(second.maxHp * 0.10)));
-    }
-    if (first.heldItem && ITEMS[first.heldItem]?.id === "rockyhelmet") {
-      second.curHp = Math.max(0, second.curHp - Math.max(1, Math.floor(second.maxHp * 0.06)));
-    }
-    if (second.heldItem && ITEMS[second.heldItem]?.id === "shellbell") {
-      second.curHp = Math.min(second.maxHp, second.curHp + Math.max(1, Math.floor(r2.val / 8)));
-    }
-
-    // Focus Sash second strike
-    if (first.curHp - r2.val <= 0 && first.curHp === first.maxHp && !first._sashUsed && first.heldItem && ITEMS[first.heldItem]?.id === "focussash") {
-      first._sashUsed = true; first.curHp = 1;
-      pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(), playerAttacking:!fIsP, enemyAttacking:fIsP,
-        message:`${second.displayName} → ${first.displayName}${effLabel(r2.eff, r2.crit)} — Focus Sash!`, msgColor:"#FBBF24" });
-    } else {
-      first.curHp = Math.max(0, first.curHp - r2.val);
-      pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(),
-        playerAttacking:!fIsP, enemyAttacking:fIsP,
-        message:`${second.displayName} → ${first.displayName}${effLabel(r2.eff, r2.crit)}`,
-        msgColor: msgColor(r2.eff, r2.crit) });
-    }
-    checkSitrus(first); checkSitrus(second);
-
-    // ── Leftovers end-of-round ──
-    function checkLeftovers(mon) {
-      if (mon.alive && mon.heldItem && ITEMS[mon.heldItem]?.id === "leftovers") {
-        const heal = Math.max(1, Math.floor(mon.maxHp * 0.06));
-        mon.curHp = Math.min(mon.maxHp, mon.curHp + heal);
-      }
-    }
-    checkLeftovers(P); checkLeftovers(E);
+    const r2 = calcDamage(second, first, second.level, first.level);
+    first.curHp = Math.max(0, first.curHp - r2.val);
+    pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(),
+      playerAttacking:!fIsP, enemyAttacking:fIsP,
+      message:`${second.displayName} → ${first.displayName}${effLabel(r2.eff, r2.crit)}`,
+      msgColor: msgColor(r2.eff, r2.crit) });
 
     if (!fIsP && style==="weakswitch" && P.curHp>0 && aliveCount(pTeam)>1 && P.curHp/P.maxHp<0.20) {
       doSwitch(`${P.displayName} is low — retreating!`, true); continue;
@@ -653,8 +514,7 @@ function PartySlot({ poke, dead, evolving }) {
             {dead&&<span style={{fontSize:10}}>💀</span>}
             {evolving&&<span style={{fontSize:11}}>✨</span>}
           </div>
-          <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginBottom: poke.heldItem?3:0 }}>{poke.types.map(t=><TypePill key={t} type={t}/>)}</div>
-          {poke.heldItem && <div style={{ fontSize:10, color:"#7C3AED", fontWeight:600 }}>{ITEMS[poke.heldItem]?.emoji} {poke.heldItem}</div>}
+          <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>{poke.types.map(t=><TypePill key={t} type={t}/>)}</div>
         </div>
       </div>
     );
@@ -773,9 +633,6 @@ export default function App() {
   const [reorderMode, setReorderMode] = useState(false);
   const [dragIdx, setDragIdx] = useState(null);
   const [battleStyle, setBattleStyle] = useState("between");
-  const [shopItems, setShopItems] = useState([]); // item names for current shop
-  const [shopTarget, setShopTarget] = useState(null); // chosen item name
-  const [shopPhase, setShopPhase] = useState("pick_item"); // pick_item | pick_pokemon
   const [evolvingIds, setEvolvingIds] = useState(new Set());
 
   const region = REGIONS[regionKey];
@@ -926,28 +783,9 @@ export default function App() {
       const w = {...gift, baseId:gift.baseId||gift.id};
       if (party.length<6) { const n=[...party,w]; setParty(n); log(`${gift.displayName} joined!`); setEvent(null); nextStage(n); }
       else { setReleaseFor(w); setEvent(null); setSubscreen("release"); }
-    } else if (ev.effect==="shop") {
-      openShop();
     }
   }
   function skipEvent() { setEvent(null); buildEncounter(stage,si,party); setSubscreen("encounter"); }
-
-  function openShop() {
-    const items = pickShopItems(party);
-    setShopItems(items); setShopTarget(null); setShopPhase("pick_item");
-    setEvent(null); setSubscreen("shop");
-  }
-  function chooseShopItem(itemName) { setShopTarget(itemName); setShopPhase("pick_pokemon"); }
-  function giveItemToPokemon(pokeId) {
-    const item = shopTarget;
-    setParty(prev => prev.map(p => p.id === pokeId ? { ...p, heldItem: item } : p));
-    const p = party.find(x => x.id === pokeId);
-    const old = p?.heldItem;
-    log(`🛍️ ${p?.displayName} received ${ITEMS[item]?.emoji} ${item}!${old ? ` (discarded ${old})` : ""}`);
-    setShopTarget(null); setSubscreen("encounter");
-    buildEncounter(stage, si, party);
-  }
-  function skipShop() { setShopTarget(null); setSubscreen("encounter"); buildEncounter(stage, si, party); }
   function acceptTrade(myId) {
     const mine = party.find(p=>p.id===myId);
     const w = {...tradeOffer, baseId:tradeOffer.baseId||tradeOffer.id};
@@ -1001,7 +839,6 @@ export default function App() {
     setEvent(null); setTradeOffer(null); setReleaseFor(null); setReorderMode(false);
     setStarterOpts([]); setEncounterOpts([]); setLoadState("idle"); setLoadMsg("");
     setEvolvingIds(new Set());
-    setShopItems([]); setShopTarget(null); setShopPhase("pick_item");
   }
 
   // ─── RENDER ──────────────────────────────────────────────────────────────────
@@ -1166,48 +1003,6 @@ export default function App() {
       </div>
     </div>}
 
-
-    {/* SHOP */}
-    {subscreen==="shop" && (<div style={card}>
-      <div style={{ fontSize:10, fontWeight:700, color:"#7C3AED", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:6 }}>🛍️ Item Shop</div>
-      {shopPhase==="pick_item" && (<>
-        <div style={{ fontWeight:800, fontSize:18, color:"#1E2533", marginBottom:4 }}>Travelling Merchant</div>
-        <p style={{ color:"#6B7280", fontSize:13, marginBottom:16 }}>Pick one item to give to a Pokémon. You can't move it later.</p>
-        <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:14 }}>
-          {shopItems.map(name => {
-            const item = ITEMS[name];
-            return <button key={name} onClick={()=>chooseShopItem(name)} style={{ background:"#F5F3FF", border:"1.5px solid #DDD6FE", borderRadius:12, padding:"14px 16px", display:"flex", alignItems:"flex-start", gap:12, cursor:"pointer", textAlign:"left" }}>
-              <span style={{ fontSize:28 }}>{item?.emoji}</span>
-              <div>
-                <div style={{ fontWeight:700, fontSize:15, color:"#1E2533", marginBottom:2 }}>{name}</div>
-                <div style={{ fontSize:12, color:"#6B7280" }}>{item?.desc}</div>
-                <div style={{ fontSize:10, color:"#9CA3AF", marginTop:3, textTransform:"uppercase", letterSpacing:"0.05em" }}>{item?.kind==="once"?"⚡ Once per battle":"♾️ Continuous"}</div>
-              </div>
-            </button>;
-          })}
-        </div>
-        <button onClick={skipShop} style={{ padding:"8px 16px", background:"#F3F4F6", border:"none", borderRadius:8, color:"#6B7280", fontWeight:600, fontSize:13, cursor:"pointer" }}>Skip</button>
-      </>)}
-      {shopPhase==="pick_pokemon" && shopTarget && (<>
-        <div style={{ fontWeight:800, fontSize:18, color:"#1E2533", marginBottom:4 }}>Give {ITEMS[shopTarget]?.emoji} {shopTarget} to…</div>
-        <p style={{ color:"#6B7280", fontSize:13, marginBottom:16 }}>If they already hold an item, it will be discarded.</p>
-        <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
-          {party.map((p,i) => (
-            <button key={i} onClick={()=>giveItemToPokemon(p.id)} style={{ background:"#F5F3FF", border:"1.5px solid #DDD6FE", borderRadius:10, padding:"10px 14px", display:"flex", alignItems:"center", gap:12, cursor:"pointer", textAlign:"left" }}>
-              <Sprite id={p.id} size={40}/>
-              <div style={{ flex:1 }}>
-                <div style={{ fontWeight:700, fontSize:13, color:"#1E2533" }}>{p.displayName} <span style={{color:"#9CA3AF",fontSize:11}}>Lv{p.level}</span></div>
-                <div style={{ fontSize:11, color:"#9CA3AF", marginTop:2 }}>
-                  {p.heldItem ? <span style={{color:"#EF4444"}}>⚠️ Holds: {ITEMS[p.heldItem]?.emoji} {p.heldItem} (will be discarded)</span> : "No item"}
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-        <button onClick={()=>setShopPhase("pick_item")} style={{ padding:"8px 16px", background:"#F3F4F6", border:"none", borderRadius:8, color:"#6B7280", fontWeight:600, fontSize:13, cursor:"pointer", marginRight:8 }}>← Back</button>
-        <button onClick={skipShop} style={{ padding:"8px 16px", background:"#F3F4F6", border:"none", borderRadius:8, color:"#6B7280", fontWeight:600, fontSize:13, cursor:"pointer" }}>Skip</button>
-      </>)}
-    </div>)}
     {/* TRADE */}
     {subscreen==="trade"&&tradeOffer&&<div style={card}>
       <div style={{ fontWeight:800, fontSize:18, color:"#1E2533", marginBottom:4 }}>🔄 Trade Offer</div>
@@ -1282,11 +1077,7 @@ export default function App() {
                 {reorderMode&&<span style={{ fontSize:14, color:"#9CA3AF" }}>☰</span>}
                 <span style={{ fontSize:11, fontWeight:700, color:"#9CA3AF", minWidth:16 }}>{i+1}</span>
                 <Sprite id={p.id} size={40}/>
-                <div style={{ flex:1 }}>
-                  <span style={{ fontWeight:700, fontSize:13, color:"#1E2533" }}>{p.displayName}</span>
-                  <span style={{ fontSize:11, color:"#9CA3AF", marginLeft:6 }}>Lv{p.level}</span>
-                  {p.heldItem && <span style={{ fontSize:10, color:"#7C3AED", marginLeft:6 }}>{ITEMS[p.heldItem]?.emoji} {p.heldItem}</span>}
-                </div>
+                <div style={{ flex:1 }}><span style={{ fontWeight:700, fontSize:13, color:"#1E2533" }}>{p.displayName}</span><span style={{ fontSize:11, color:"#9CA3AF", marginLeft:6 }}>Lv{p.level}</span></div>
                 <div style={{ display:"flex", gap:3 }}>{p.types.map(t=><TypePill key={t} type={t}/>)}</div>
                 {reorderMode&&i>0&&<button onClick={()=>movePartySlot(i,i-1)} style={{ padding:"2px 7px", background:"#F3F4F6", border:"none", borderRadius:4, cursor:"pointer", fontSize:12 }}>↑</button>}
                 {reorderMode&&i<party.length-1&&<button onClick={()=>movePartySlot(i,i+1)} style={{ padding:"2px 7px", background:"#F3F4F6", border:"none", borderRadius:4, cursor:"pointer", fontSize:12 }}>↓</button>}
