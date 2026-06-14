@@ -114,6 +114,16 @@ function bestMove(attacker, defender, aLevel, dLevel) {
       }
     }
   }
+  // If all moves deal 0 (full immunity), use Struggle: 35BP, no type, physical, neutral
+  if (!bestResult || bestResult.eff === 0) {
+    const aAtk   = calcStat(attacker.baseAtk,   aLevel);
+    const aSpAtk = calcStat(attacker.baseSpAtk, aLevel);
+    const dDef   = calcStat(defender.baseDef,   dLevel);
+    const dSpDef = calcStat(defender.baseSpDef, dLevel);
+    const A = Math.max(aAtk, aSpAtk), D = aAtk >= aSpAtk ? dDef : dSpDef;
+    const dmgBase = Math.floor(((2 * aLevel / 5 + 2) * 35 * A / D) / 50) + 2;
+    return { type: "normal", isPhys: aAtk >= aSpAtk, eff: 1, A, D, dmgBase, isStruggle: true };
+  }
   return bestResult;
 }
 
@@ -260,13 +270,13 @@ const REGIONS = {
       {type:"gym",    name:"Cerulean Gym",         level:21, leader:"Misty",    badge:"Cascade Badge", team:[{id:120,lv:18},{id:121,lv:21}]},
       {type:"route",  name:"Route 6",             level:22, pool:[43,52,60,63,69]},
       {type:"route",  name:"Route 11",            level:24, pool:[23,41,52,69,84]},
-      {type:"gym",    name:"Vermilion Gym",        level:26, leader:"Lt. Surge",badge:"Thunder Badge", team:[{id:100,lv:21},{id:100,lv:21},{id:26,lv:24}]},
+      {type:"gym",    name:"Vermilion Gym",        level:26, leader:"Lt. Surge",badge:"Thunder Badge", team:[{id:100,lv:21},{id:25,lv:18},{id:26,lv:24}]},
       {type:"route",  name:"Rock Tunnel",         level:28, pool:[66,74,95,41,42]},
       {type:"route",  name:"Route 8",             level:29, pool:[23,41,52,58,63]},
       {type:"gym",    name:"Celadon Gym",          level:29, leader:"Erika",    badge:"Rainbow Badge", team:[{id:71,lv:29},{id:114,lv:24},{id:45,lv:29}]},
       {type:"route",  name:"Route 12",            level:31, pool:[60,98,102,129]},
       {type:"route",  name:"Safari Zone",         level:33, pool:[111,113,115,123,127,128,133],legendary:true},
-      {type:"gym",    name:"Fuchsia Gym",          level:37, leader:"Koga",     badge:"Soul Badge",    team:[{id:109,lv:37},{id:109,lv:39},{id:110,lv:43},{id:49,lv:37}]},
+      {type:"gym",    name:"Fuchsia Gym",          level:37, leader:"Koga",     badge:"Soul Badge",    team:[{id:109,lv:37},{id:89,lv:39},{id:109,lv:37},{id:110,lv:43}]},
       {type:"route",  name:"Route 15",            level:39, pool:[43,84,102,112,114],legendary:true},
       {type:"route",  name:"Route 16",            level:41, pool:[84,112,132,143],legendary:true},
       {type:"gym",    name:"Saffron Gym",          level:43, leader:"Sabrina",  badge:"Marsh Badge",   team:[{id:64,lv:38},{id:122,lv:37},{id:49,lv:38},{id:65,lv:43}]},
@@ -276,11 +286,11 @@ const REGIONS = {
       {type:"route",  name:"Route 22",            level:48, pool:[29,32,56,104,111],legendary:true},
       {type:"route",  name:"Route 23",            level:50, pool:[23,24,66,67,111,112],legendary:true},
       {type:"gym",    name:"Viridian Gym",         level:50, leader:"Giovanni",  badge:"Earth Badge",   team:[{id:111,lv:45},{id:51,lv:42},{id:53,lv:44},{id:112,lv:45},{id:34,lv:50}]},
-      {type:"elite4", name:"Elite Four – Lorelei", level:54, leader:"Lorelei",  team:[{id:86,lv:54},{id:87,lv:54},{id:91,lv:56},{id:124,lv:54},{id:131,lv:56}]},
+      {type:"elite4", name:"Elite Four – Lorelei", level:54, leader:"Lorelei",  team:[{id:87,lv:54},{id:91,lv:53},{id:80,lv:54},{id:124,lv:54},{id:131,lv:56}]},
       {type:"elite4", name:"Elite Four – Bruno",   level:56, leader:"Bruno",    team:[{id:95,lv:53},{id:95,lv:55},{id:107,lv:55},{id:106,lv:55},{id:68,lv:56}]},
-      {type:"elite4", name:"Elite Four – Agatha",  level:58, leader:"Agatha",   team:[{id:94,lv:54},{id:93,lv:56},{id:42,lv:56},{id:94,lv:58}]},
-      {type:"elite4", name:"Elite Four – Lance",   level:60, leader:"Lance",    team:[{id:130,lv:56},{id:148,lv:56},{id:149,lv:58},{id:142,lv:58},{id:148,lv:60}]},
-      {type:"champion",name:"Champion – Blue",     level:65, leader:"Blue",     badge:"Hall of Fame",  team:[{id:18,lv:65},{id:59,lv:63},{id:65,lv:63},{id:112,lv:61},{id:149,lv:63}]},
+      {type:"elite4", name:"Elite Four – Agatha",  level:58, leader:"Agatha",   team:[{id:94,lv:54},{id:93,lv:54},{id:94,lv:58},{id:24,lv:56},{id:94,lv:58}]},
+      {type:"elite4", name:"Elite Four – Lance",   level:60, leader:"Lance",    team:[{id:130,lv:56},{id:148,lv:56},{id:148,lv:56},{id:142,lv:58},{id:149,lv:60}]},
+      {type:"champion",name:"Champion – Blue",     level:65, leader:"Blue",     badge:"Hall of Fame",  team:[{id:18,lv:59},{id:65,lv:57},{id:112,lv:59},{id:59,lv:61},{id:103,lv:61},{id:9,lv:65}]},
     ],
   },
   johto: {
@@ -298,7 +308,7 @@ const REGIONS = {
       {type:"gym",    name:"Violet Gym",           level:9,  leader:"Falkner", badge:"Zephyr Badge",   team:[{id:21,lv:7},{id:22,lv:9}]},
       {type:"route",  name:"Route 32",            level:13, pool:[60,69,163,187,194]},
       {type:"route",  name:"Union Cave",          level:15, pool:[41,74,95,104,194]},
-      {type:"gym",    name:"Azalea Gym",           level:17, leader:"Bugsy",   badge:"Hive Badge",     team:[{id:213,lv:15},{id:123,lv:15},{id:212,lv:17}]},
+      {type:"gym",    name:"Azalea Gym",           level:17, leader:"Bugsy",   badge:"Hive Badge",     team:[{id:14,lv:14},{id:11,lv:14},{id:123,lv:16}]},
       {type:"route",  name:"Ilex Forest",         level:19, pool:[43,44,163,177]},
       {type:"route",  name:"Route 34",            level:21, pool:[29,32,43,92,186]},
       {type:"gym",    name:"Goldenrod Gym",        level:23, leader:"Whitney",  badge:"Plain Badge",    team:[{id:35,lv:18},{id:241,lv:23}]},
@@ -307,17 +317,17 @@ const REGIONS = {
       {type:"gym",    name:"Ecruteak Gym",         level:25, leader:"Morty",    badge:"Fog Badge",      team:[{id:92,lv:21},{id:92,lv:21},{id:93,lv:23},{id:94,lv:25}]},
       {type:"route",  name:"Route 39",            level:29, pool:[29,32,39,40,241]},
       {type:"route",  name:"Route 41",            level:31, pool:[72,73,130,170,171]},
-      {type:"gym",    name:"Cianwood Gym",         level:29, leader:"Chuck",    badge:"Storm Badge",    team:[{id:62,lv:27},{id:107,lv:29}]},
+      {type:"gym",    name:"Cianwood Gym",         level:29, leader:"Chuck",    badge:"Storm Badge",    team:[{id:57,lv:27},{id:62,lv:30}]},
       {type:"route",  name:"Route 42",            level:32, pool:[66,111,177,203,206],legendary:true},
       {type:"route",  name:"Mt. Mortar",          level:34, pool:[66,74,95,236,246],legendary:true},
-      {type:"gym",    name:"Olivine Gym",          level:35, leader:"Jasmine",  badge:"Mineral Badge",  team:[{id:208,lv:30},{id:208,lv:30},{id:82,lv:35}]},
+      {type:"gym",    name:"Olivine Gym",          level:35, leader:"Jasmine",  badge:"Mineral Badge",  team:[{id:81,lv:30},{id:81,lv:30},{id:208,lv:35}]},
       {type:"route",  name:"Route 44",            level:37, pool:[62,98,186,213,214],legendary:true},
       {type:"route",  name:"Ice Path",            level:39, pool:[86,87,220,221,225],legendary:true},
       {type:"gym",    name:"Mahogany Gym",         level:35, leader:"Pryce",    badge:"Glacier Badge",  team:[{id:86,lv:27},{id:87,lv:29},{id:131,lv:31}]},
       {type:"route",  name:"Route 45",            level:41, pool:[66,74,111,246,247],legendary:true},
       {type:"route",  name:"Route 46",            level:43, pool:[29,32,56,95,246],legendary:true},
-      {type:"gym",    name:"Blackthorn Gym",       level:40, leader:"Clair",    badge:"Rising Badge",   team:[{id:148,lv:37},{id:148,lv:37},{id:148,lv:37},{id:230,lv:40}]},
-      {type:"elite4", name:"Elite Four – Will",    level:42, leader:"Will",     team:[{id:178,lv:40},{id:124,lv:41},{id:196,lv:41},{id:197,lv:41},{id:178,lv:42}]},
+      {type:"gym",    name:"Blackthorn Gym",       level:40, leader:"Clair",    badge:"Rising Badge",   team:[{id:130,lv:38},{id:148,lv:38},{id:148,lv:38},{id:230,lv:41}]},
+      {type:"elite4", name:"Elite Four – Will",    level:42, leader:"Will",     team:[{id:178,lv:40},{id:124,lv:41},{id:80,lv:41},{id:103,lv:41},{id:178,lv:42}]},
       {type:"elite4", name:"Elite Four – Koga",    level:44, leader:"Koga",     team:[{id:49,lv:40},{id:110,lv:43},{id:169,lv:41},{id:89,lv:43},{id:49,lv:44}]},
       {type:"elite4", name:"Elite Four – Bruno",   level:46, leader:"Bruno",    team:[{id:95,lv:42},{id:237,lv:41},{id:95,lv:42},{id:106,lv:42},{id:68,lv:46}]},
       {type:"elite4", name:"Elite Four – Karen",   level:48, leader:"Karen",    team:[{id:197,lv:42},{id:45,lv:41},{id:94,lv:41},{id:229,lv:44},{id:248,lv:47}]},
@@ -339,7 +349,7 @@ const REGIONS = {
       {type:"gym",    name:"Rustboro Gym",         level:14, leader:"Roxanne",   badge:"Stone Badge",   team:[{id:74,lv:12},{id:299,lv:14}]},
       {type:"route",  name:"Route 104",           level:15, pool:[263,278,283,285,287]},
       {type:"route",  name:"Petalburg Woods",     level:17, pool:[265,270,285,290,313]},
-      {type:"gym",    name:"Dewford Gym",          level:18, leader:"Brawly",    badge:"Knuckle Badge", team:[{id:296,lv:16},{id:307,lv:16},{id:286,lv:18}]},
+      {type:"gym",    name:"Dewford Gym",          level:18, leader:"Brawly",    badge:"Knuckle Badge", team:[{id:66,lv:17},{id:307,lv:17},{id:296,lv:19}]},
       {type:"route",  name:"Route 110",           level:20, pool:[263,270,278,283,311,312]},
       {type:"route",  name:"Route 117",           level:22, pool:[270,285,300,303,307]},
       {type:"gym",    name:"Mauville Gym",         level:24, leader:"Wattson",   badge:"Dynamo Badge",  team:[{id:309,lv:20},{id:82,lv:22},{id:310,lv:24}]},
@@ -354,7 +364,7 @@ const REGIONS = {
       {type:"gym",    name:"Fortree Gym",          level:33, leader:"Winona",    badge:"Feather Badge", team:[{id:277,lv:29},{id:279,lv:30},{id:227,lv:31},{id:334,lv:33}]},
       {type:"route",  name:"Route 121",           level:37, pool:[278,300,315,331,352,363]},
       {type:"route",  name:"Safari Zone",         level:39, pool:[283,315,334,357,363,371],legendary:true},
-      {type:"gym",    name:"Mossdeep Gym",         level:42, leader:"Tate & Liza",badge:"Mind Badge",  team:[{id:337,lv:40},{id:338,lv:40},{id:178,lv:41},{id:344,lv:42}]},
+      {type:"gym",    name:"Mossdeep Gym",         level:42, leader:"Tate & Liza",badge:"Mind Badge",  team:[{id:344,lv:41},{id:178,lv:41},{id:337,lv:42},{id:338,lv:42}]},
       {type:"route",  name:"Route 124",           level:43, pool:[283,318,320,341,349,369],legendary:true},
       {type:"route",  name:"Seafloor Cavern",     level:45, pool:[304,318,339,340,366,369],legendary:true},
       {type:"gym",    name:"Sootopolis Gym",       level:46, leader:"Juan",      badge:"Rain Badge",    team:[{id:370,lv:41},{id:340,lv:41},{id:364,lv:43},{id:342,lv:43},{id:230,lv:46}]},
@@ -421,7 +431,8 @@ function simulateBattle(playerTeam, enemyTeam, style = "between") {
     const after = team.findIndex((p, i) => i > idx && p.alive);
     return after !== -1 ? after : team.findIndex(p => p.alive);
   }
-  function effLabel(eff, crit) {
+  function effLabel(eff, crit, isStruggle) {
+  if (isStruggle) return " (Struggle)";
     if (crit) return " ⚡ Crit!";
     if (eff >= 2) return " ✦ Super effective!";
     if (eff === 0) return " No effect.";
@@ -572,7 +583,7 @@ function simulateBattle(playerTeam, enemyTeam, style = "between") {
 
     // ── Leftovers end-of-round ──
     function checkLeftovers(mon) {
-      if (mon.alive && mon.heldItem && ITEMS[mon.heldItem]?.id === "leftovers") {
+      if (mon.alive && mon.curHp > 0 && mon.heldItem && ITEMS[mon.heldItem]?.id === "leftovers") {
         const heal = Math.max(1, Math.floor(mon.maxHp * 0.06));
         mon.curHp = Math.min(mon.maxHp, mon.curHp + heal);
       }
@@ -621,7 +632,7 @@ function TypePill({ type }) {
   return <span style={{ background:TYPE_COLOR[type]||"#888", color:"#fff", fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:20, letterSpacing:"0.05em", textTransform:"uppercase" }}>{type}</span>;
 }
 
-function Sprite({ id, back, size=64, style:sx={} }) {
+function Sprite({ id, back, size=96, style:sx={} }) {
   const mkUrl = (i, b) => b
     ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/back/${i}.png`
     : `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${i}.png`;
@@ -631,9 +642,9 @@ function Sprite({ id, back, size=64, style:sx={} }) {
   useEffect(() => { setSrc(mkUrl(id, back)); setFailed(false); }, [id, back]);
   if (failed) {
     const cols = ["#6390F0","#EE8130","#7AC74C","#F95587","#F7D02C","#96D9D6","#A98FF3"];
-    return <div style={{ width:size, height:size, borderRadius:"50%", background:cols[id%cols.length], display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.floor(size*0.25), fontWeight:800, color:"#fff", flexShrink:0, ...sx }}>{id}</div>;
+    return <div style={{ width:size, height:size, minWidth:size, minHeight:size, borderRadius:"50%", background:cols[id%cols.length], display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.floor(size*0.25), fontWeight:800, color:"#fff", flexShrink:0, ...sx }}>{id}</div>;
   }
-  return <img src={src} alt="" onError={() => src===mkUrl(id,back)&&!back ? setSrc(artUrl) : setFailed(true)} style={{ width:size, height:size, imageRendering:"pixelated", flexShrink:0, objectFit:"contain", ...sx }}/>;
+  return <img src={src} alt="" onError={() => src===mkUrl(id,back)&&!back ? setSrc(artUrl) : setFailed(true)} style={{ width:size, height:size, minWidth:size, minHeight:size, imageRendering:"pixelated", flexShrink:0, objectFit:"contain", ...sx }}/>;
 }
 
 function HpBar({ pct, height=8 }) {
@@ -667,7 +678,7 @@ function PartySlot({ poke, dead, evolving }) {
     ? <div style={{ border:"1.5px dashed #E5E7EB", borderRadius:10, height:64, opacity:0.35 }}/>
     : (
       <div className={evolving?"evo-glow":""} style={{ background:dead?"#111":"#fff", border:`1.5px solid ${dead?"#2a2a2a":"#E8ECF0"}`, borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", gap:8, opacity:dead?0.5:1, transition:"border-color 0.2s" }}>
-        <Sprite id={poke.id} size={48} style={{ filter:dead?"grayscale(1)":poke.legendary?"drop-shadow(0 0 4px gold)":"none" }} className={evolving?"evo-flash":""}/>
+        <Sprite id={poke.id} size={96} style={{ filter:dead?"grayscale(1)":poke.legendary?"drop-shadow(0 0 4px gold)":"none" }} className={evolving?"evo-flash":""}/>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:2 }}>
             {poke.legendary&&<span style={{fontSize:9}}>⭐</span>}
@@ -702,9 +713,12 @@ function BattleArena({ frames, playerTeam, enemyTeam, badgeInfo, onDone }) {
   useEffect(() => { setFi(0); setPhase("idle"); setDone(false); }, [framesLen, firstMsg]);
   useEffect(() => {
     if (!frames?.length) return;
-    if (fi >= frames.length - 1) {
+    // Clamp fi to last frame — never advance past it
+    const lastIdx = frames.length - 1;
+    if (fi >= lastIdx) {
+      clearTimeout(timer.current);
       if (!done) { setDone(true); onDoneRef.current?.(); }
-      return;
+      return; // STOP — no timeouts, no setFi, nothing
     }
     const frame = frames[fi];
     const isAttack = frame.playerAttacking || frame.enemyAttacking;
@@ -712,13 +726,13 @@ function BattleArena({ frames, playerTeam, enemyTeam, badgeInfo, onDone }) {
       setPhase("lunge");
       timer.current = setTimeout(() => {
         setPhase("back");
-        timer.current = setTimeout(() => { setPhase("idle"); setFi(i=>i+1); }, 160);
+        timer.current = setTimeout(() => { setPhase("idle"); setFi(i => Math.min(i+1, lastIdx)); }, 160);
       }, 200);
     } else {
-      timer.current = setTimeout(() => { setPhase("idle"); setFi(i=>i+1); }, 700);
+      timer.current = setTimeout(() => { setPhase("idle"); setFi(i => Math.min(i+1, lastIdx)); }, 700);
     }
     return () => clearTimeout(timer.current);
-  }, [fi, phase, frames, done]); // onDone removed from deps — use ref instead
+  }, [fi, phase, frames, done]);
 
   if (!frames?.length) return null;
   const frame = frames[Math.min(fi, frames.length-1)];
@@ -752,7 +766,7 @@ function BattleArena({ frames, playerTeam, enemyTeam, badgeInfo, onDone }) {
             </div>
           ) : null}
         </div>
-        {!isBadgeFrame && E && <div style={{ transition:"transform 0.18s cubic-bezier(.4,2,.6,1), opacity 0.35s", transform:eT, opacity:enemyFainted?0:1, flexShrink:0 }}><Sprite id={E.id} size={120}/></div>}
+        {!isBadgeFrame && E && <div style={{ transition:"transform 0.18s cubic-bezier(.4,2,.6,1), opacity 0.35s", transform:eT, opacity:enemyFainted?0:1, flexShrink:0 }}><Sprite id={E.id} size={144}/></div>}
       </div>
       {/* Message */}
       <div style={{ background:"rgba(0,0,0,0.8)", borderRadius:8, padding:"8px 14px", marginBottom:12, minHeight:34, display:"flex", alignItems:"center" }}>
@@ -760,7 +774,7 @@ function BattleArena({ frames, playerTeam, enemyTeam, badgeInfo, onDone }) {
       </div>
       {/* Player row */}
       <div style={{ display:"flex", alignItems:"flex-end", gap:12, minHeight:130 }}>
-        {P&&<div style={{ transition:"transform 0.18s cubic-bezier(.4,2,.6,1), opacity 0.35s", transform:pT, opacity:playerFainted?0:1, flexShrink:0 }}><Sprite id={P.id} back size={120}/></div>}
+        {P&&<div style={{ transition:"transform 0.18s cubic-bezier(.4,2,.6,1), opacity 0.35s", transform:pT, opacity:playerFainted?0:1, flexShrink:0 }}><Sprite id={P.id} back size={144}/></div>}
         <div style={{ background:"rgba(0,0,0,0.65)", backdropFilter:"blur(4px)", borderRadius:10, padding:"10px 14px", flex:1 }}>
           {P&&<>
             <div style={{ fontSize:13, fontWeight:700, color:"#fff", marginBottom:5 }}>{P.legendary&&<span style={{color:"gold",marginRight:4}}>⭐</span>}{P.displayName} <span style={{fontSize:11,color:"#9CA3AF"}}>Lv{P.level}</span></div>
@@ -951,10 +965,12 @@ export default function App() {
     if (s.type==="route") {
       const evts = runLog.filter(l=>l.startsWith("🎉")).length;
       const shopCount = runLog.filter(l=>l.includes("🛍️")).length;
+      const gymsBeaten = runLog.filter(l=>l.includes("Badge")).length;
       const nonShopEvts = evts - shopCount;
-      // Shop appears 2-4 times per run (every ~4-6 routes), other events max 4 times
-      const shopRoll = shopCount < 4 && Math.random() < 0.45;
-      const otherRoll = nonShopEvts < 4 && Math.random() < 0.20;
+      // Shop: max 1 per 2 gyms beaten, max 4 total; ~25% chance per route when eligible
+      const shopEligible = shopCount < 4 && gymsBeaten >= shopCount * 2;
+      const shopRoll = shopEligible && Math.random() < 0.25;
+      const otherRoll = nonShopEvts < 4 && Math.random() < 0.18;
       if (shopRoll) { setEvent(SPECIAL_EVENTS.find(e=>e.id==="shop")); setSubscreen("event"); }
       else if (otherRoll) { setEvent(SPECIAL_EVENTS.filter(e=>e.id!=="shop")[Math.floor(Math.random()*(SPECIAL_EVENTS.length-1))]); setSubscreen("event"); }
       else { buildEncounter(s,idx,leveled); setSubscreen("encounter"); }
@@ -1235,7 +1251,7 @@ export default function App() {
         {!catchResult&&<div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:14 }}>
           {encounterOpts.map((p,i)=>(
             <button key={i} onClick={()=>tryAttemptCatch(p)} style={{ background:p.legendary?"#FFFBEB":"#F8FAFC", border:`1.5px solid ${p.legendary?"#FCD34D":"#E5E7EB"}`, borderRadius:12, padding:"14px 16px", display:"flex", alignItems:"center", gap:14, cursor:"pointer", textAlign:"left" }}>
-              <Sprite id={p.id} size={64}/>
+              <Sprite id={p.id} size={96}/>
               <div>
                 <div style={{ fontWeight:700, fontSize:16, color:"#1E2533" }}>{p.legendary&&<span style={{color:"goldenrod"}}>⭐ </span>}{p.displayName} <span style={{ color:"#9CA3AF", fontWeight:400, fontSize:13 }}>Lv{p.level}</span></div>
                 <div style={{ display:"flex", gap:4, marginTop:4 }}>{p.types.map(t=><TypePill key={t} type={t}/>)}</div>
@@ -1288,7 +1304,7 @@ export default function App() {
         <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
           {party.map((p,i) => (
             <button key={i} onClick={()=>giveItemToPokemon(p.id)} style={{ background:"#F5F3FF", border:"1.5px solid #DDD6FE", borderRadius:10, padding:"10px 14px", display:"flex", alignItems:"center", gap:12, cursor:"pointer", textAlign:"left" }}>
-              <Sprite id={p.id} size={40}/>
+              <Sprite id={p.id} size={64}/>
               <div style={{ flex:1 }}>
                 <div style={{ fontWeight:700, fontSize:13, color:"#1E2533" }}>{p.displayName} <span style={{color:"#9CA3AF",fontSize:11}}>Lv{p.level}</span></div>
                 <div style={{ fontSize:11, color:"#9CA3AF", marginTop:2 }}>
@@ -1307,11 +1323,11 @@ export default function App() {
       <div style={{ fontWeight:800, fontSize:18, color:"#1E2533", marginBottom:4 }}>🔄 Trade Offer</div>
       <p style={{ color:"#6B7280", fontSize:13, marginBottom:12 }}>A trainer offers their <strong>{tradeOffer.displayName}</strong> (Lv{tradeOffer.level}). Give which?</p>
       <div style={{ background:"#F8FAFC", border:"1.5px solid #E5E7EB", borderRadius:10, padding:"12px 14px", display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
-        <Sprite id={tradeOffer.id} size={56}/>
+        <Sprite id={tradeOffer.id} size={96}/>
         <div><div style={{ fontWeight:700, fontSize:15, color:"#1E2533" }}>{tradeOffer.displayName} <span style={{ color:"#9CA3AF", fontSize:12 }}>Lv{tradeOffer.level}</span></div><div style={{ display:"flex", gap:4, marginTop:4 }}>{tradeOffer.types.map(t=><TypePill key={t} type={t}/>)}</div></div>
       </div>
       <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
-        {party.map((p,i)=><button key={i} onClick={()=>acceptTrade(p.id)} style={{ background:"#FFF5F5", border:"1.5px solid #FCA5A5", borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", textAlign:"left" }}><Sprite id={p.id} size={40}/><span style={{ fontWeight:700, fontSize:13, color:"#E53935" }}>Trade {p.displayName}</span></button>)}
+        {party.map((p,i)=><button key={i} onClick={()=>acceptTrade(p.id)} style={{ background:"#FFF5F5", border:"1.5px solid #FCA5A5", borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", textAlign:"left" }}><Sprite id={p.id} size={64}/><span style={{ fontWeight:700, fontSize:13, color:"#E53935" }}>Trade {p.displayName}</span></button>)}
       </div>
       <button onClick={skipTrade} style={{ padding:"8px 16px", background:"#F3F4F6", border:"none", borderRadius:8, color:"#6B7280", fontWeight:600, fontSize:13, cursor:"pointer" }}>Decline</button>
     </div>}
@@ -1321,11 +1337,11 @@ export default function App() {
       <div style={{ fontWeight:800, fontSize:18, color:"#1E2533", marginBottom:4 }}>Party Full!</div>
       <p style={{ color:"#6B7280", fontSize:13, marginBottom:12 }}>Release one to make room for <strong>{releaseFor.displayName}</strong>.</p>
       <div style={{ background:"#F8FAFC", border:"1.5px solid #E5E7EB", borderRadius:10, padding:"12px 14px", display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
-        <Sprite id={releaseFor.id} size={56}/>
+        <Sprite id={releaseFor.id} size={96}/>
         <div><div style={{ fontWeight:700, fontSize:14, color:"#1E2533" }}>{releaseFor.displayName} <span style={{ color:"#9CA3AF", fontSize:12 }}>Lv{releaseFor.level}</span></div><div style={{ display:"flex", gap:4, marginTop:4 }}>{releaseFor.types.map(t=><TypePill key={t} type={t}/>)}</div></div>
       </div>
       <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
-        {party.map((p,i)=><button key={i} onClick={()=>handleRelease(p.id)} style={{ background:"#FFF5F5", border:"1.5px solid #FCA5A5", borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", textAlign:"left" }}><Sprite id={p.id} size={40}/><span style={{ fontWeight:700, fontSize:13, color:"#E53935" }}>Release {p.displayName}</span></button>)}
+        {party.map((p,i)=><button key={i} onClick={()=>handleRelease(p.id)} style={{ background:"#FFF5F5", border:"1.5px solid #FCA5A5", borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", textAlign:"left" }}><Sprite id={p.id} size={64}/><span style={{ fontWeight:700, fontSize:13, color:"#E53935" }}>Release {p.displayName}</span></button>)}
       </div>
       <button onClick={()=>{ setReleaseFor(null); nextStage(party); }} style={{ padding:"8px 16px", background:"#F3F4F6", border:"none", borderRadius:8, color:"#6B7280", fontWeight:600, fontSize:13, cursor:"pointer" }}>Skip</button>
     </div>}
@@ -1348,7 +1364,7 @@ export default function App() {
         <div style={{ display:"flex", flexWrap:"wrap", gap:10, marginBottom:20 }}>
           {previewEnemyTeam.map((p,i)=>
             <div key={i} style={{ background:"#F8FAFC", border:"1.5px solid #E5E7EB", borderRadius:10, padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
-              <Sprite id={p.id} size={80}/><div><div style={{ fontSize:13, fontWeight:700, color:"#1E2533" }}>{p.displayName||`#${p.id}`}</div><div style={{ fontSize:11, color:"#9CA3AF" }}>Lv{p.level}</div></div>
+              <Sprite id={p.id} size={112}/><div><div style={{ fontSize:13, fontWeight:700, color:"#1E2533" }}>{p.displayName||`#${p.id}`}</div><div style={{ fontSize:11, color:"#9CA3AF" }}>Lv{p.level}</div></div>
             </div>
           )}
         </div>
@@ -1374,7 +1390,7 @@ export default function App() {
                 style={{ background:dragIdx===i?"#FFF5F5":"#F8FAFC", border:`1.5px solid ${dragIdx===i?"#E53935":"#E5E7EB"}`, borderRadius:10, padding:"10px 14px", display:"flex", alignItems:"center", gap:10, cursor:reorderMode?"grab":"default" }}>
                 {reorderMode&&<span style={{ fontSize:14, color:"#9CA3AF" }}>☰</span>}
                 <span style={{ fontSize:11, fontWeight:700, color:"#9CA3AF", minWidth:16 }}>{i+1}</span>
-                <Sprite id={p.id} size={40}/>
+                <Sprite id={p.id} size={64}/>
                 <div style={{ flex:1 }}>
                   <span style={{ fontWeight:700, fontSize:13, color:"#1E2533" }}>{p.displayName}</span>
                   <span style={{ fontSize:11, color:"#9CA3AF", marginLeft:6 }}>Lv{p.level}</span>
