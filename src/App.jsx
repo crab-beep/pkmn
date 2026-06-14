@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 
 // ─── POKEAPI ─────────────────────────────────────────────────────────────────
 const API = "https://pokeapi.co/api/v2";
@@ -405,7 +405,14 @@ function simulateBattle(playerTeam, enemyTeam, style = "between") {
   function pushFrame(extra) {
     const spi = pTeam[pi]?.alive ? pi : Math.max(0, pTeam.findIndex(p => p.alive));
     const sei = eTeam[ei]?.alive ? ei : Math.max(0, eTeam.findIndex(e => e.alive));
-    frames.push({ playerIdx:spi, enemyIdx:sei, ...hpPcts(), playerAttacking:false, enemyAttacking:false, playerFainted:false, enemyFainted:false, isBadgeFrame:false, message:"", msgColor:"#E2E8F0", ...extra });
+    frames.push({
+      playerIdx:spi, enemyIdx:sei,
+      playerPokemonId: pTeam[spi]?.id,
+      enemyPokemonId:  eTeam[sei]?.id,
+      ...hpPcts(), playerAttacking:false, enemyAttacking:false,
+      playerFainted:false, enemyFainted:false, isBadgeFrame:false,
+      message:"", msgColor:"#E2E8F0", ...extra
+    });
   }
   function nextAlive(team, idx) {
     const after = team.findIndex((p, i) => i > idx && p.alive);
@@ -427,21 +434,32 @@ function simulateBattle(playerTeam, enemyTeam, style = "between") {
     pTeam.push(cur);
     pi = pTeam.findIndex(p => p.alive);
     if (pi === -1) return;
-    pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(), message:msg, msgColor:"#FBBF24" });
+    pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(), message:msg, msgColor:"#FBBF24",
+      playerPokemonId: pTeam[pi]?.id, enemyPokemonId: eTeam[ei]?.id });
     if (incomingTakesHit && aliveCount(eTeam) > 0) {
       const inc = pTeam[pi], E = eTeam[ei];
       const { val, crit, eff } = calcDamage(E, inc, E.level, inc.level);
       inc.curHp = Math.max(0, inc.curHp - val);
       pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(), enemyAttacking:true,
+        playerPokemonId: inc.id, enemyPokemonId: E.id,
         message:`${E.displayName} hits ${inc.displayName} as it comes in!${effLabel(eff, crit)}`,
         msgColor: crit?"#FBBF24":"#F87171" });
       if (inc.curHp <= 0) {
         inc.alive = false;
-        pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(), playerFainted:true, message:`${inc.displayName} fainted!`, msgColor:"#EF4444" });
+        pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(), playerFainted:true,
+          playerPokemonId: inc.id, enemyPokemonId: E.id,
+          message:`${inc.displayName} fainted!`, msgColor:"#EF4444" });
         pi = nextAlive(pTeam, pi);
-        if (pi !== -1) pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(), message:`Go, ${pTeam[pi].displayName}!`, msgColor:"#FBBF24" });
+        if (pi !== -1) pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(),
+          playerPokemonId: pTeam[pi]?.id, enemyPokemonId: E.id,
+          message:`Go, ${pTeam[pi].displayName}!`, msgColor:"#FBBF24" });
       }
     }
+  }
+
+  // Returns true if there's a next alive player pokemon at full HP to switch into
+  function canSwitch() {
+    return pTeam.some((p, i) => i !== pi && p.alive && p.curHp >= p.maxHp);
   }
 
   let rounds = 0;
@@ -507,8 +525,9 @@ function simulateBattle(playerTeam, enemyTeam, style = "between") {
       if (fIsP) {
         const newEi = nextAlive(eTeam, ei);
         if (newEi !== -1 && eTeam[newEi]?.alive) { ei = newEi; pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(), message:`Foe sends out ${eTeam[ei].displayName}!`, msgColor:"#FBBF24" }); }
-        if ((style==="between"||style==="weakswitch") && aliveCount(eTeam)>0 && P.curHp/P.maxHp<0.30 && aliveCount(pTeam)>1) {
-          doSwitch(`${P.displayName} is hurt — retreating!`, style==="weakswitch");
+        // After KO: no free hit, only switch if a next mon is at 100% HP
+        if ((style==="between"||style==="weakswitch") && aliveCount(eTeam)>0 && P.curHp/P.maxHp<0.30 && canSwitch()) {
+          doSwitch(`${P.displayName} is hurt — retreating!`, false);
         }
       } else {
         const newPi = nextAlive(pTeam, pi);
@@ -557,8 +576,9 @@ function simulateBattle(playerTeam, enemyTeam, style = "between") {
     }
     checkLeftovers(P); checkLeftovers(E);
 
-    if (!fIsP && style==="weakswitch" && P.curHp>0 && aliveCount(pTeam)>1 && P.curHp/P.maxHp<0.20) {
-      doSwitch(`${P.displayName} is low — retreating!`, true); continue;
+    // Mid-fight weakswitch: triggers regardless of turn order, requires a full-HP mon to switch into
+    if (style==="weakswitch" && P.curHp>0 && P.alive && P.curHp/P.maxHp<0.20 && canSwitch()) {
+      doSwitch(`${P.displayName} is low — switching out!`, true); continue;
     }
 
     if (first.curHp <= 0) {
@@ -666,24 +686,41 @@ function BattleArena({ frames, playerTeam, enemyTeam, badgeInfo, onDone }) {
   const [phase, setPhase] = useState("idle");
   const [done, setDone] = useState(false);
   const timer = useRef();
+  const onDoneRef = useRef(onDone);
+  useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
+
+  // Build id→pokemon maps so switching doesn't break (index into pTeam changes after splice)
+  const pMap = useMemo(() => Object.fromEntries(playerTeam.map(p => [p.id, p])), [playerTeam]);
+  const eMap = useMemo(() => Object.fromEntries(enemyTeam.map(e => [e.id, e])), [enemyTeam]);
+
   useEffect(() => { setFi(0); setPhase("idle"); setDone(false); }, [frames]);
   useEffect(() => {
     if (!frames?.length) return;
-    if (fi >= frames.length - 1) { if (!done) { setDone(true); onDone?.(); } return; }
+    if (fi >= frames.length - 1) {
+      if (!done) { setDone(true); onDoneRef.current?.(); }
+      return;
+    }
     const frame = frames[fi];
     const isAttack = frame.playerAttacking || frame.enemyAttacking;
     if (isAttack && phase === "idle") {
       setPhase("lunge");
-      timer.current = setTimeout(() => { setPhase("back"); timer.current = setTimeout(() => { setPhase("idle"); setFi(i=>i+1); }, 160); }, 200);
-    } else { timer.current = setTimeout(() => { setPhase("idle"); setFi(i=>i+1); }, 700); }
+      timer.current = setTimeout(() => {
+        setPhase("back");
+        timer.current = setTimeout(() => { setPhase("idle"); setFi(i=>i+1); }, 160);
+      }, 200);
+    } else {
+      timer.current = setTimeout(() => { setPhase("idle"); setFi(i=>i+1); }, 700);
+    }
     return () => clearTimeout(timer.current);
-  }, [fi, phase, frames, done, onDone]);
+  }, [fi, phase, frames, done]); // onDone removed from deps — use ref instead
 
   if (!frames?.length) return null;
   const frame = frames[Math.min(fi, frames.length-1)];
-  const { playerIdx, enemyIdx, playerHpPcts, enemyHpPcts,
+  const { playerIdx, enemyIdx, playerPokemonId, enemyPokemonId, playerHpPcts, enemyHpPcts,
     playerAttacking, enemyAttacking, playerFainted, enemyFainted, isBadgeFrame, message, msgColor } = frame;
-  const P = playerTeam[playerIdx], E = enemyTeam[enemyIdx];
+  // Use id lookup if available (correct after switches), fall back to index
+  const P = (playerPokemonId && pMap[playerPokemonId]) || playerTeam[playerIdx];
+  const E = (enemyPokemonId  && eMap[enemyPokemonId])  || enemyTeam[enemyIdx];
   const pLunge = playerAttacking && phase==="lunge";
   const eLunge = enemyAttacking && phase==="lunge";
   const pT = playerFainted?"translateY(50px) scale(0.4)":pLunge?"translateX(70px) translateY(-10px) scale(1.15)":"translateX(0)";
@@ -766,6 +803,7 @@ export default function App() {
   const [battleEnemyTeam, setBattleEnemyTeam] = useState([]);
   const [battleDone, setBattleDone] = useState(null);
   const [battleAnimDone, setBattleAnimDone] = useState(false);
+  const [previewEnemyTeam, setPreviewEnemyTeam] = useState([]);
   const [event, setEvent] = useState(null);
   const [tradeOffer, setTradeOffer] = useState(null);
   const [releaseFor, setReleaseFor] = useState(null);
@@ -870,7 +908,16 @@ export default function App() {
       const evts = runLog.filter(l=>l.startsWith("🎉")).length;
       if (evts<4&&Math.random()<0.30) { setEvent(SPECIAL_EVENTS[Math.floor(Math.random()*SPECIAL_EVENTS.length)]); setSubscreen("event"); }
       else { buildEncounter(s,idx,leveled); setSubscreen("encounter"); }
-    } else { setReorderMode(false); setSubscreen("battle"); }
+    } else {
+      // Build randomized preview team now so preview matches what will be fought
+      const preview = s.team.map(e => {
+        const realId = rand(e.id);
+        const p = getPokemonAtLevel(realId, e.lv);
+        return p ? {...p, baseId:realId, lv:e.lv} : null;
+      }).filter(Boolean);
+      setPreviewEnemyTeam(preview);
+      setReorderMode(false); setSubscreen("battle");
+    }
   }
 
   function buildEncounter(s, stageIdx, currentParty) {
@@ -958,12 +1005,8 @@ export default function App() {
   function skipTrade() { setTradeOffer(null); buildEncounter(stage,si,party); setSubscreen("encounter"); }
 
   function startBattle() {
-    const s = stage;
-    const enemies = s.team.map(e => {
-      const realId = rand(e.id); // apply randomizer to gym teams too
-      const p = getPokemonAtLevel(realId, e.lv);
-      return p ? {...p, baseId:realId} : null;
-    }).filter(Boolean);
+    const enemies = previewEnemyTeam.length ? previewEnemyTeam
+      : stage.team.map(e => { const p = getPokemonAtLevel(rand(e.id), e.lv); return p ? {...p, baseId:p.id} : null; }).filter(Boolean);
     const result = simulateBattle(party, enemies, battleStyle);
     setBattlePlayerTeam([...party]); setBattleEnemyTeam(enemies);
     setBattleFrames(result.frames);
@@ -1252,12 +1295,11 @@ export default function App() {
       {!battleFrames.length&&(<>
         <div style={{ fontSize:11, fontWeight:600, color:"#9CA3AF", marginBottom:10 }}>Enemy team</div>
         <div style={{ display:"flex", flexWrap:"wrap", gap:10, marginBottom:20 }}>
-          {stage.team.map((e,i)=>{
-            const p=getPokemonAtLevel(e.id,e.lv);
-            return <div key={i} style={{ background:"#F8FAFC", border:"1.5px solid #E5E7EB", borderRadius:10, padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
-              <Sprite id={e.id} size={48}/><div><div style={{ fontSize:13, fontWeight:700, color:"#1E2533" }}>{p?.displayName||`#${e.id}`}</div><div style={{ fontSize:11, color:"#9CA3AF" }}>Lv{e.lv}</div></div>
-            </div>;
-          })}
+          {previewEnemyTeam.map((p,i)=>
+            <div key={i} style={{ background:"#F8FAFC", border:"1.5px solid #E5E7EB", borderRadius:10, padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
+              <Sprite id={p.id} size={48}/><div><div style={{ fontSize:13, fontWeight:700, color:"#1E2533" }}>{p.displayName||`#${p.id}`}</div><div style={{ fontSize:11, color:"#9CA3AF" }}>Lv{p.level}</div></div>
+            </div>
+          )}
         </div>
         <div style={{ marginBottom:16 }}>
           <div style={{ fontSize:11, fontWeight:600, color:"#9CA3AF", marginBottom:8 }}>Switch style</div>
@@ -1313,15 +1355,15 @@ export default function App() {
         ${EVO_STYLE}
         @media (min-width:700px) {
           .game-layout { display:flex; min-height:100vh; }
-          .party-col { width:30%; min-width:220px; max-width:320px; background:#fff; border-right:1px solid #E8ECF0; padding:20px 16px; overflow-y:auto; }
-          .main-col { flex:1; padding:20px 24px; overflow-y:auto; }
+          .party-col { width:30%; min-width:220px; max-width:320px; background:#fff; border-right:1px solid #E8ECF0; padding:20px 16px; overflow-y:auto; order:0; }
+          .main-col { flex:1; padding:20px 24px; overflow-y:auto; order:1; }
           .log-inline { display:none; }
           .log-sidebar { display:block; margin-top:16px; }
         }
         @media (max-width:699px) {
           .game-layout { display:flex; flex-direction:column; }
-          .party-col { width:100%; background:#fff; border-bottom:1px solid #E8ECF0; padding:16px; }
-          .main-col { width:100%; padding:16px; }
+          .party-col { width:100%; background:#fff; border-top:1px solid #E8ECF0; padding:16px; order:1; }
+          .main-col { width:100%; padding:16px; order:0; }
           .log-inline { display:block; margin-top:12px; }
           .log-sidebar { display:none; }
         }
