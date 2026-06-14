@@ -272,7 +272,7 @@ const REGIONS = {
       {type:"gym",    name:"Saffron Gym",          level:43, leader:"Sabrina",  badge:"Marsh Badge",   team:[{id:64,lv:38},{id:122,lv:37},{id:49,lv:38},{id:65,lv:43}]},
       {type:"route",  name:"Seafoam Islands",     level:44, pool:[86,87,90,91,124],legendary:true},
       {type:"route",  name:"Route 21",            level:46, pool:[72,73,98,99,129],legendary:true},
-      {type:"gym",    name:"Cinnabar Gym",         level:47, leader:"Blaine",   badge:"Volcano Badge", team:[{id:58,lv:42},{id:77,lv:40},{id:78,lv:42},{id:59,lv:47}]},
+      {type:"gym",    name:"Cinnabar Gym",         level:47, leader:"Blaine",   badge:"Volcano Badge", team:[{id:58,lv:42},{id:58,lv:42},{id:78,lv:47},{id:59,lv:54}]},
       {type:"route",  name:"Route 22",            level:48, pool:[29,32,56,104,111],legendary:true},
       {type:"route",  name:"Route 23",            level:50, pool:[23,24,66,67,111,112],legendary:true},
       {type:"gym",    name:"Viridian Gym",         level:50, leader:"Giovanni",  badge:"Earth Badge",   team:[{id:111,lv:45},{id:51,lv:42},{id:53,lv:44},{id:112,lv:45},{id:34,lv:50}]},
@@ -696,7 +696,10 @@ function BattleArena({ frames, playerTeam, enemyTeam, badgeInfo, onDone }) {
   const pMap = useMemo(() => Object.fromEntries(playerTeam.map(p => [p.id, p])), [playerTeam]);
   const eMap = useMemo(() => Object.fromEntries(enemyTeam.map(e => [e.id, e])), [enemyTeam]);
 
-  useEffect(() => { setFi(0); setPhase("idle"); setDone(false); }, [frames]);
+  // Only reset when it's genuinely a new battle (frame count changes)
+  const framesLen = frames?.length ?? 0;
+  const firstMsg = frames?.[0]?.message ?? "";
+  useEffect(() => { setFi(0); setPhase("idle"); setDone(false); }, [framesLen, firstMsg]);
   useEffect(() => {
     if (!frames?.length) return;
     if (fi >= frames.length - 1) {
@@ -895,6 +898,12 @@ export default function App() {
     }).filter(Boolean);
   }
 
+  // For gym/E4 teams: use the EXACT pokemon id specified, no evolution
+  function getEnemyAtLevel(exactId, level) {
+    const base = pokedex[exactId];
+    return base ? {...base, level, baseId:exactId} : null;
+  }
+
   function getPokemonAtLevel(baseId, level, eeveeKey) {
     if (baseId===133&&level>=28) {
       const key = eeveeKey||`eevee_${baseId}`;
@@ -916,7 +925,8 @@ export default function App() {
       const ev = getPokemonAtLevel(p.baseId||p.id, toLevel, p.eeveeKey);
       if (!ev) return {...p, level:toLevel};
       if (ev.id !== p.id) evolved.push(ev.id);
-      return {...ev, baseId:p.baseId||p.id, eeveeKey:p.eeveeKey};
+      // Spread p first so heldItem, nickname, and all extra fields are preserved
+      return {...p, ...ev, baseId:p.baseId||p.id, eeveeKey:p.eeveeKey, heldItem:p.heldItem};
     });
     if (evolved.length) {
       const names = result.filter(p => evolved.includes(p.id)).map(p => p.displayName);
@@ -952,7 +962,7 @@ export default function App() {
       // Build randomized preview team now so preview matches what will be fought
       const preview = s.team.map(e => {
         const realId = rand(e.id);
-        const p = getPokemonAtLevel(realId, e.lv);
+        const p = getEnemyAtLevel(realId, e.lv);
         return p ? {...p, baseId:realId, lv:e.lv} : null;
       }).filter(Boolean);
       setPreviewEnemyTeam(preview);
@@ -1046,7 +1056,7 @@ export default function App() {
 
   function startBattle() {
     const enemies = previewEnemyTeam.length ? previewEnemyTeam
-      : stage.team.map(e => { const p = getPokemonAtLevel(rand(e.id), e.lv); return p ? {...p, baseId:p.id} : null; }).filter(Boolean);
+      : stage.team.map(e => { const p = getEnemyAtLevel(rand(e.id), e.lv); return p ? {...p, baseId:p.id} : null; }).filter(Boolean);
     const result = simulateBattle(party, enemies, battleStyle);
     setBattlePlayerTeam([...party]); setBattleEnemyTeam(enemies);
     setBattleFrames(result.frames);
@@ -1338,7 +1348,7 @@ export default function App() {
         <div style={{ display:"flex", flexWrap:"wrap", gap:10, marginBottom:20 }}>
           {previewEnemyTeam.map((p,i)=>
             <div key={i} style={{ background:"#F8FAFC", border:"1.5px solid #E5E7EB", borderRadius:10, padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
-              <Sprite id={p.id} size={48}/><div><div style={{ fontSize:13, fontWeight:700, color:"#1E2533" }}>{p.displayName||`#${p.id}`}</div><div style={{ fontSize:11, color:"#9CA3AF" }}>Lv{p.level}</div></div>
+              <Sprite id={p.id} size={80}/><div><div style={{ fontSize:13, fontWeight:700, color:"#1E2533" }}>{p.displayName||`#${p.id}`}</div><div style={{ fontSize:11, color:"#9CA3AF" }}>Lv{p.level}</div></div>
             </div>
           )}
         </div>
