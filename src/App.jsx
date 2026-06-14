@@ -67,7 +67,10 @@ async function preloadEvoChains(pokedex) {
     if (r.status !== "fulfilled") return;
     const chain = r.value;
     for (let i = 0; i < chain.length - 1; i++) {
-      if (chain[i + 1].minLevel !== null) evoMap[chain[i].id] = [chain[i + 1].id, chain[i + 1].minLevel];
+      const ml = chain[i + 1].minLevel;
+      // Stone/trade evos have null minLevel — assign a reasonable fallback level
+      const fallback = ml !== null ? ml : (i === 0 ? 32 : 42);
+      evoMap[chain[i].id] = [chain[i + 1].id, fallback];
     }
   });
   return evoMap;
@@ -81,14 +84,13 @@ function calcStat(base, level, isHp = false) {
   return Math.floor((((2 * base + iv + Math.floor(ev / 4)) * level) / 100) + 5);
 }
 
-// Physical/Special split by type (Gen 4+)
-const PHYSICAL_TYPES = new Set(["normal","fighting","flying","poison","ground","rock","bug","ghost","steel"]);
-// Remaining are special: fire, water, grass, electric, ice, psychic, dragon, dark, fairy
+// Physical/Special split (Gen 4+): category is per-move, not per-type.
+// We simulate both a physical and special move of each type and pick the best.
 
-// Returns best {atk, atkStat, defStat, type, isPhysical} for attacker vs defender
+// Returns best move result for attacker vs defender
 function bestMove(attacker, defender, aLevel, dLevel) {
   const BP = 70;
-  const aAtk  = calcStat(attacker.baseAtk,   aLevel);
+  const aAtk   = calcStat(attacker.baseAtk,   aLevel);
   const aSpAtk = calcStat(attacker.baseSpAtk, aLevel);
   const dDef   = calcStat(defender.baseDef,   dLevel);
   const dSpDef = calcStat(defender.baseSpDef, dLevel);
@@ -96,19 +98,20 @@ function bestMove(attacker, defender, aLevel, dLevel) {
 
   let bestDmg = -1, bestResult = null;
   for (const type of attacker.types) {
-    const isPhys = PHYSICAL_TYPES.has(type);
-    let A = isPhys ? aAtk : aSpAtk;
-    const D = isPhys ? dDef : dSpDef;
-    // Item boosts
-    if (item?.typeBoost === type) A = Math.floor(A * item.boost);
-    if (item?.id === "muscleband" && isPhys) A = Math.floor(A * 1.1);
-    if (item?.id === "wiseglasses" && !isPhys) A = Math.floor(A * 1.1);
     const eff = effectiveness(type, defender.types);
-    const dmgBase = Math.floor(((2 * aLevel / 5 + 2) * BP * A / D) / 50) + 2;
-    const finalDmg = Math.floor(dmgBase * eff);
-    if (finalDmg > bestDmg) {
-      bestDmg = finalDmg;
-      bestResult = { type, isPhys, eff, A, D, dmgBase };
+    // Try physical
+    for (const isPhys of [true, false]) {
+      let A = isPhys ? aAtk : aSpAtk;
+      const D = isPhys ? dDef : dSpDef;
+      if (item?.typeBoost === type) A = Math.floor(A * item.boost);
+      if (item?.id === "muscleband" && isPhys) A = Math.floor(A * 1.1);
+      if (item?.id === "wiseglasses" && !isPhys) A = Math.floor(A * 1.1);
+      const dmgBase = Math.floor(((2 * aLevel / 5 + 2) * BP * A / D) / 50) + 2;
+      const finalDmg = Math.floor(dmgBase * eff);
+      if (finalDmg > bestDmg) {
+        bestDmg = finalDmg;
+        bestResult = { type, isPhys, eff, A, D, dmgBase };
+      }
     }
   }
   return bestResult;
@@ -740,6 +743,7 @@ function BattleArena({ frames, playerTeam, enemyTeam, badgeInfo, onDone }) {
           </>) : isBadgeFrame && badgeInfo ? (
             <div style={{ textAlign:"center", padding:"8px 0" }}>
               <div style={{ fontSize:32, marginBottom:4 }}>🏅</div>
+              <div style={{ fontSize:32 }}>{BADGE_EMOJI[badgeInfo.badge]||"🏅"}</div>
               <div style={{ fontWeight:800, fontSize:15, color:"#FBBF24" }}>{badgeInfo.badge}</div>
               <div style={{ fontSize:11, color:"#9CA3AF", marginTop:2 }}>obtained!</div>
             </div>
@@ -768,14 +772,40 @@ function BattleArena({ frames, playerTeam, enemyTeam, badgeInfo, onDone }) {
   );
 }
 
-function LeaderPortrait({ leaderName, region }) {
-  const info = REGIONS[region]?.gymLeaders?.[leaderName];
-  if (!info) return null;
-  const url = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/trainers/${info.npc}.png`;
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [leaderName]);
-  if (failed) return null;
-  return <img src={url} alt={leaderName} onError={()=>setFailed(true)} style={{ width:96, height:96, imageRendering:"pixelated", objectFit:"contain" }}/>;
+// Leader portrait: try multiple sources, fall back to styled monogram
+const LEADER_COLORS = {
+  Brock:"#8B7355",Misty:"#FF69B4","Lt. Surge":"#FFD700",Erika:"#228B22",
+  Koga:"#9400D3",Sabrina:"#FF1493",Blaine:"#FF4500",Giovanni:"#2F4F4F",
+  Lorelei:"#4169E1",Bruno:"#8B0000",Agatha:"#4B0082",Lance:"#DC143C",Blue:"#1E90FF",
+  Falkner:"#87CEEB",Bugsy:"#90EE90",Whitney:"#FFB6C1",Morty:"#9370DB",
+  Chuck:"#CD853F",Jasmine:"#C0C0C0",Pryce:"#B0E0E6",Clair:"#9932CC",
+  Will:"#7B68EE",Karen:"#2F2F2F",
+  Roxanne:"#D2691E",Brawly:"#4169E1",Wattson:"#FFD700",Flannery:"#FF6347",
+  Norman:"#CD853F",Winona:"#87CEEB","Tate & Liza":"#DDA0DD",Juan:"#20B2AA",
+  Sidney:"#2F2F2F",Phoebe:"#DB7093",Glacia:"#E0E8FF",Drake:"#8B4513",Wallace:"#00CED1",
+};
+const BADGE_EMOJI = {
+  "Boulder Badge":"🪨","Cascade Badge":"💧","Thunder Badge":"⚡","Rainbow Badge":"🌈",
+  "Soul Badge":"☠️","Marsh Badge":"🧠","Volcano Badge":"🔥","Earth Badge":"🌍",
+  "Zephyr Badge":"🌬️","Hive Badge":"🐝","Plain Badge":"🌸","Fog Badge":"👻",
+  "Storm Badge":"🌊","Mineral Badge":"⚙️","Glacier Badge":"❄️","Rising Badge":"🐉",
+  "Stone Badge":"🪨","Knuckle Badge":"👊","Dynamo Badge":"⚡","Heat Badge":"🔥",
+  "Balance Badge":"⚖️","Feather Badge":"🪶","Mind Badge":"🔮","Rain Badge":"🌧️",
+  "Hall of Fame":"🏆",
+};
+
+function LeaderPortrait({ leaderName }) {
+  const color = LEADER_COLORS[leaderName] || "#E53935";
+  const initials = leaderName.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+  return (
+    <div style={{ width:80, height:80, borderRadius:"50%", background:color,
+      display:"flex", alignItems:"center", justifyContent:"center",
+      fontSize:28, fontWeight:900, color:"#fff", flexShrink:0,
+      boxShadow:`0 0 0 3px ${color}55, 0 4px 16px ${color}44`,
+      letterSpacing:"-0.02em" }}>
+      {initials}
+    </div>
+  );
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
@@ -901,12 +931,22 @@ export default function App() {
   function enterStage(idx, currentParty, currentBonus=bonusLevels) {
     const s = region.stages[idx];
     if (!s) { setScreen("win"); return; }
-    const leveled = levelUpParty(currentParty, s.level+currentBonus);
+    // Level cap = highest enemy lv on the team (for gyms/E4/champion); routes use s.level
+    const teamPeak = s.team ? Math.max(...s.team.map(e => e.lv)) : s.level;
+    const baseLevel = s.team ? teamPeak : s.level;
+    const e4Bonus = (s.type === "elite4" || s.type === "champion") ? 5 : 0;
+    const leveled = levelUpParty(currentParty, baseLevel + currentBonus + e4Bonus);
     setParty(leveled); resetBattle(); setCatchResult(null);
     setEvent(null); setTradeOffer(null); setReleaseFor(null); setSi(idx);
     if (s.type==="route") {
       const evts = runLog.filter(l=>l.startsWith("🎉")).length;
-      if (evts<4&&Math.random()<0.30) { setEvent(SPECIAL_EVENTS[Math.floor(Math.random()*SPECIAL_EVENTS.length)]); setSubscreen("event"); }
+      const shopCount = runLog.filter(l=>l.includes("🛍️")).length;
+      const nonShopEvts = evts - shopCount;
+      // Shop appears 2-4 times per run (every ~4-6 routes), other events max 4 times
+      const shopRoll = shopCount < 4 && Math.random() < 0.45;
+      const otherRoll = nonShopEvts < 4 && Math.random() < 0.20;
+      if (shopRoll) { setEvent(SPECIAL_EVENTS.find(e=>e.id==="shop")); setSubscreen("event"); }
+      else if (otherRoll) { setEvent(SPECIAL_EVENTS.filter(e=>e.id!=="shop")[Math.floor(Math.random()*(SPECIAL_EVENTS.length-1))]); setSubscreen("event"); }
       else { buildEncounter(s,idx,leveled); setSubscreen("encounter"); }
     } else {
       // Build randomized preview team now so preview matches what will be fought
@@ -1025,7 +1065,8 @@ export default function App() {
       if (survivedPokemon.length===0) { log("💔 No Pokémon left."); setParty([]); setScreen("over"); return; }
       setBonusLevels(0);
       log("💊 Healed at Pokémon Center!");
-      const healed = levelUpParty(survivedPokemon, stageSnap.level);
+      const teamPeak2 = stageSnap.team ? Math.max(...stageSnap.team.map(e => e.lv)) : stageSnap.level;
+      const healed = levelUpParty(survivedPokemon, teamPeak2);
       setParty(healed); enterStage(si+1,healed,0);
     } else {
       log(`❌ Defeated by ${stageSnap?.leader}.`);
@@ -1115,7 +1156,7 @@ export default function App() {
               <div>
                 <div style={{ fontWeight:800, fontSize:20, color:"#1E2533", marginBottom:4 }}>{p.displayName}</div>
                 <div style={{ display:"flex", gap:6, marginBottom:6 }}>{p.types.map(t=><TypePill key={t} type={t}/>)}</div>
-                <div style={{ fontSize:12, color:"#9CA3AF" }}>HP {p.baseHp} · Atk {p.baseAtk} · Spd {p.baseSpeed||p.speed} · BST {p.bst}</div>
+                <div style={{ fontSize:12, color:"#9CA3AF" }}>BST {p.bst}</div>
               </div>
             </button>
           ))}
@@ -1188,7 +1229,7 @@ export default function App() {
               <div>
                 <div style={{ fontWeight:700, fontSize:16, color:"#1E2533" }}>{p.legendary&&<span style={{color:"goldenrod"}}>⭐ </span>}{p.displayName} <span style={{ color:"#9CA3AF", fontWeight:400, fontSize:13 }}>Lv{p.level}</span></div>
                 <div style={{ display:"flex", gap:4, marginTop:4 }}>{p.types.map(t=><TypePill key={t} type={t}/>)}</div>
-                <div style={{ fontSize:12, color:"#9CA3AF", marginTop:4 }}>HP {p.baseHp} · Atk {p.baseAtk} · Spd {p.baseSpeed||p.speed} · BST {p.bst}</div>
+                <div style={{ fontSize:12, color:"#9CA3AF", marginTop:4 }}>BST {p.bst}</div>
               </div>
             </button>
           ))}
@@ -1285,7 +1326,7 @@ export default function App() {
         {stage.type==="champion"?"Champion":stage.type==="elite4"?"Elite Four":"Gym Battle"}
       </div>
       <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:16 }}>
-        <LeaderPortrait leaderName={stage.leader} region={regionKey}/>
+        <LeaderPortrait leaderName={stage.leader}/>
         <div>
           <div style={{ fontWeight:800, fontSize:24, color:"#1E2533" }}>{stage.leader}</div>
           {stage.badge&&<div style={{ fontSize:13, color:"#9CA3AF" }}>· {stage.badge}</div>}
