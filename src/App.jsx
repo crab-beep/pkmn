@@ -481,6 +481,13 @@ function simulateBattle(playerTeam, enemyTeam, style = "between") {
     if (!pTeam[pi]?.alive) { pi = pTeam.findIndex(p => p.alive); if (pi === -1) break; }
     if (!eTeam[ei]?.alive) { ei = eTeam.findIndex(e => e.alive); if (ei === -1) break; }
     const P = pTeam[pi], E = eTeam[ei];
+
+    // Mid-fight weakswitch: check at START of turn, before any attacks
+    // Only valid when both Pokémon are alive; requires a full-HP mon to switch into
+    if (style==="weakswitch" && P.alive && E.alive && P.curHp > 0 && P.curHp / P.maxHp < 0.20 && canSwitch()) {
+      doSwitch(`${P.displayName} is low — switching out!`, true); continue;
+    }
+
     const pFirst = calcStat(P.baseSpeed || P.speed, P.level) >= calcStat(E.baseSpeed || E.speed, E.level);
     const [first, second, fIsP] = pFirst ? [P, E, true] : [E, P, false];
 
@@ -590,11 +597,6 @@ function simulateBattle(playerTeam, enemyTeam, style = "between") {
     }
     checkLeftovers(P); checkLeftovers(E);
 
-    // Mid-fight weakswitch: triggers regardless of turn order, requires a full-HP mon to switch into
-    if (style==="weakswitch" && P.curHp>0 && P.alive && P.curHp/P.maxHp<0.20 && canSwitch()) {
-      doSwitch(`${P.displayName} is low — switching out!`, true); continue;
-    }
-
     if (first.curHp <= 0) {
       first.alive = false;
       pushFrame({ playerIdx:pi, enemyIdx:ei, ...hpPcts(), playerFainted:fIsP, enemyFainted:!fIsP, message:`${first.displayName} fainted!`, msgColor:"#EF4444" });
@@ -632,7 +634,7 @@ function TypePill({ type }) {
   return <span style={{ background:TYPE_COLOR[type]||"#888", color:"#fff", fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:20, letterSpacing:"0.05em", textTransform:"uppercase" }}>{type}</span>;
 }
 
-function Sprite({ id, back, size=96, style:sx={} }) {
+function Sprite({ id, back, size=80, style:sx={} }) {
   const mkUrl = (i, b) => b
     ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/back/${i}.png`
     : `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${i}.png`;
@@ -678,7 +680,7 @@ function PartySlot({ poke, dead, evolving }) {
     ? <div style={{ border:"1.5px dashed #E5E7EB", borderRadius:10, height:64, opacity:0.35 }}/>
     : (
       <div className={evolving?"evo-glow":""} style={{ background:dead?"#111":"#fff", border:`1.5px solid ${dead?"#2a2a2a":"#E8ECF0"}`, borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", gap:8, opacity:dead?0.5:1, transition:"border-color 0.2s" }}>
-        <Sprite id={poke.id} size={96} style={{ filter:dead?"grayscale(1)":poke.legendary?"drop-shadow(0 0 4px gold)":"none" }} className={evolving?"evo-flash":""}/>
+        <Sprite id={poke.id} size={80} style={{ filter:dead?"grayscale(1)":poke.legendary?"drop-shadow(0 0 4px gold)":"none" }} className={evolving?"evo-flash":""}/>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:2 }}>
             {poke.legendary&&<span style={{fontSize:9}}>⭐</span>}
@@ -707,29 +709,43 @@ function BattleArena({ frames, playerTeam, enemyTeam, badgeInfo, onDone }) {
   const pMap = useMemo(() => Object.fromEntries(playerTeam.map(p => [p.id, p])), [playerTeam]);
   const eMap = useMemo(() => Object.fromEntries(enemyTeam.map(e => [e.id, e])), [enemyTeam]);
 
-  // Only reset when it's genuinely a new battle (frame count changes)
-  const framesLen = frames?.length ?? 0;
-  const firstMsg = frames?.[0]?.message ?? "";
-  useEffect(() => { setFi(0); setPhase("idle"); setDone(false); }, [framesLen, firstMsg]);
+  const stoppedRef = useRef(false);
+
+  // Reset on new battle (frames reference changes = new battle started)
+  useEffect(() => {
+    stoppedRef.current = false;
+    setFi(0); setPhase("idle"); setDone(false);
+  }, [frames]);
+
   useEffect(() => {
     if (!frames?.length) return;
-    // Clamp fi to last frame — never advance past it
     const lastIdx = frames.length - 1;
     if (fi >= lastIdx) {
+      stoppedRef.current = true;
       clearTimeout(timer.current);
       if (!done) { setDone(true); onDoneRef.current?.(); }
-      return; // STOP — no timeouts, no setFi, nothing
+      return;
     }
+    if (stoppedRef.current) return;
     const frame = frames[fi];
     const isAttack = frame.playerAttacking || frame.enemyAttacking;
+    const advance = () => {
+      if (stoppedRef.current) return;
+      setFi(i => {
+        const next = Math.min(i + 1, lastIdx);
+        if (next >= lastIdx) stoppedRef.current = true;
+        return next;
+      });
+    };
     if (isAttack && phase === "idle") {
       setPhase("lunge");
       timer.current = setTimeout(() => {
+        if (stoppedRef.current) return;
         setPhase("back");
-        timer.current = setTimeout(() => { setPhase("idle"); setFi(i => Math.min(i+1, lastIdx)); }, 160);
+        timer.current = setTimeout(() => { if (stoppedRef.current) return; setPhase("idle"); advance(); }, 160);
       }, 200);
     } else {
-      timer.current = setTimeout(() => { setPhase("idle"); setFi(i => Math.min(i+1, lastIdx)); }, 700);
+      timer.current = setTimeout(() => { if (stoppedRef.current) return; setPhase("idle"); advance(); }, 700);
     }
     return () => clearTimeout(timer.current);
   }, [fi, phase, frames, done]);
@@ -1251,7 +1267,7 @@ export default function App() {
         {!catchResult&&<div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:14 }}>
           {encounterOpts.map((p,i)=>(
             <button key={i} onClick={()=>tryAttemptCatch(p)} style={{ background:p.legendary?"#FFFBEB":"#F8FAFC", border:`1.5px solid ${p.legendary?"#FCD34D":"#E5E7EB"}`, borderRadius:12, padding:"14px 16px", display:"flex", alignItems:"center", gap:14, cursor:"pointer", textAlign:"left" }}>
-              <Sprite id={p.id} size={96}/>
+              <Sprite id={p.id} size={80}/>
               <div>
                 <div style={{ fontWeight:700, fontSize:16, color:"#1E2533" }}>{p.legendary&&<span style={{color:"goldenrod"}}>⭐ </span>}{p.displayName} <span style={{ color:"#9CA3AF", fontWeight:400, fontSize:13 }}>Lv{p.level}</span></div>
                 <div style={{ display:"flex", gap:4, marginTop:4 }}>{p.types.map(t=><TypePill key={t} type={t}/>)}</div>
@@ -1304,7 +1320,7 @@ export default function App() {
         <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
           {party.map((p,i) => (
             <button key={i} onClick={()=>giveItemToPokemon(p.id)} style={{ background:"#F5F3FF", border:"1.5px solid #DDD6FE", borderRadius:10, padding:"10px 14px", display:"flex", alignItems:"center", gap:12, cursor:"pointer", textAlign:"left" }}>
-              <Sprite id={p.id} size={64}/>
+              <Sprite id={p.id} size={80}/>
               <div style={{ flex:1 }}>
                 <div style={{ fontWeight:700, fontSize:13, color:"#1E2533" }}>{p.displayName} <span style={{color:"#9CA3AF",fontSize:11}}>Lv{p.level}</span></div>
                 <div style={{ fontSize:11, color:"#9CA3AF", marginTop:2 }}>
@@ -1323,11 +1339,11 @@ export default function App() {
       <div style={{ fontWeight:800, fontSize:18, color:"#1E2533", marginBottom:4 }}>🔄 Trade Offer</div>
       <p style={{ color:"#6B7280", fontSize:13, marginBottom:12 }}>A trainer offers their <strong>{tradeOffer.displayName}</strong> (Lv{tradeOffer.level}). Give which?</p>
       <div style={{ background:"#F8FAFC", border:"1.5px solid #E5E7EB", borderRadius:10, padding:"12px 14px", display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
-        <Sprite id={tradeOffer.id} size={96}/>
+        <Sprite id={tradeOffer.id} size={80}/>
         <div><div style={{ fontWeight:700, fontSize:15, color:"#1E2533" }}>{tradeOffer.displayName} <span style={{ color:"#9CA3AF", fontSize:12 }}>Lv{tradeOffer.level}</span></div><div style={{ display:"flex", gap:4, marginTop:4 }}>{tradeOffer.types.map(t=><TypePill key={t} type={t}/>)}</div></div>
       </div>
       <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
-        {party.map((p,i)=><button key={i} onClick={()=>acceptTrade(p.id)} style={{ background:"#FFF5F5", border:"1.5px solid #FCA5A5", borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", textAlign:"left" }}><Sprite id={p.id} size={64}/><span style={{ fontWeight:700, fontSize:13, color:"#E53935" }}>Trade {p.displayName}</span></button>)}
+        {party.map((p,i)=><button key={i} onClick={()=>acceptTrade(p.id)} style={{ background:"#FFF5F5", border:"1.5px solid #FCA5A5", borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", textAlign:"left" }}><Sprite id={p.id} size={80}/><span style={{ fontWeight:700, fontSize:13, color:"#E53935" }}>Trade {p.displayName}</span></button>)}
       </div>
       <button onClick={skipTrade} style={{ padding:"8px 16px", background:"#F3F4F6", border:"none", borderRadius:8, color:"#6B7280", fontWeight:600, fontSize:13, cursor:"pointer" }}>Decline</button>
     </div>}
@@ -1337,11 +1353,11 @@ export default function App() {
       <div style={{ fontWeight:800, fontSize:18, color:"#1E2533", marginBottom:4 }}>Party Full!</div>
       <p style={{ color:"#6B7280", fontSize:13, marginBottom:12 }}>Release one to make room for <strong>{releaseFor.displayName}</strong>.</p>
       <div style={{ background:"#F8FAFC", border:"1.5px solid #E5E7EB", borderRadius:10, padding:"12px 14px", display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
-        <Sprite id={releaseFor.id} size={96}/>
+        <Sprite id={releaseFor.id} size={80}/>
         <div><div style={{ fontWeight:700, fontSize:14, color:"#1E2533" }}>{releaseFor.displayName} <span style={{ color:"#9CA3AF", fontSize:12 }}>Lv{releaseFor.level}</span></div><div style={{ display:"flex", gap:4, marginTop:4 }}>{releaseFor.types.map(t=><TypePill key={t} type={t}/>)}</div></div>
       </div>
       <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
-        {party.map((p,i)=><button key={i} onClick={()=>handleRelease(p.id)} style={{ background:"#FFF5F5", border:"1.5px solid #FCA5A5", borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", textAlign:"left" }}><Sprite id={p.id} size={64}/><span style={{ fontWeight:700, fontSize:13, color:"#E53935" }}>Release {p.displayName}</span></button>)}
+        {party.map((p,i)=><button key={i} onClick={()=>handleRelease(p.id)} style={{ background:"#FFF5F5", border:"1.5px solid #FCA5A5", borderRadius:10, padding:"10px 12px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", textAlign:"left" }}><Sprite id={p.id} size={80}/><span style={{ fontWeight:700, fontSize:13, color:"#E53935" }}>Release {p.displayName}</span></button>)}
       </div>
       <button onClick={()=>{ setReleaseFor(null); nextStage(party); }} style={{ padding:"8px 16px", background:"#F3F4F6", border:"none", borderRadius:8, color:"#6B7280", fontWeight:600, fontSize:13, cursor:"pointer" }}>Skip</button>
     </div>}
@@ -1364,7 +1380,7 @@ export default function App() {
         <div style={{ display:"flex", flexWrap:"wrap", gap:10, marginBottom:20 }}>
           {previewEnemyTeam.map((p,i)=>
             <div key={i} style={{ background:"#F8FAFC", border:"1.5px solid #E5E7EB", borderRadius:10, padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
-              <Sprite id={p.id} size={112}/><div><div style={{ fontSize:13, fontWeight:700, color:"#1E2533" }}>{p.displayName||`#${p.id}`}</div><div style={{ fontSize:11, color:"#9CA3AF" }}>Lv{p.level}</div></div>
+              <Sprite id={p.id} size={80}/><div><div style={{ fontSize:13, fontWeight:700, color:"#1E2533" }}>{p.displayName||`#${p.id}`}</div><div style={{ fontSize:11, color:"#9CA3AF" }}>Lv{p.level}</div></div>
             </div>
           )}
         </div>
@@ -1390,7 +1406,7 @@ export default function App() {
                 style={{ background:dragIdx===i?"#FFF5F5":"#F8FAFC", border:`1.5px solid ${dragIdx===i?"#E53935":"#E5E7EB"}`, borderRadius:10, padding:"10px 14px", display:"flex", alignItems:"center", gap:10, cursor:reorderMode?"grab":"default" }}>
                 {reorderMode&&<span style={{ fontSize:14, color:"#9CA3AF" }}>☰</span>}
                 <span style={{ fontSize:11, fontWeight:700, color:"#9CA3AF", minWidth:16 }}>{i+1}</span>
-                <Sprite id={p.id} size={64}/>
+                <Sprite id={p.id} size={80}/>
                 <div style={{ flex:1 }}>
                   <span style={{ fontWeight:700, fontSize:13, color:"#1E2533" }}>{p.displayName}</span>
                   <span style={{ fontSize:11, color:"#9CA3AF", marginLeft:6 }}>Lv{p.level}</span>
