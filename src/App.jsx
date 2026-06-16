@@ -114,15 +114,13 @@ function bestMove(attacker, defender, aLevel, dLevel) {
       }
     }
   }
-  // If all moves deal 0 (full immunity), use Struggle: 35BP, no type, physical, neutral
-  if (!bestResult || bestResult.eff === 0) {
-    const aAtk   = calcStat(attacker.baseAtk,   aLevel);
-    const aSpAtk = calcStat(attacker.baseSpAtk, aLevel);
-    const dDef   = calcStat(defender.baseDef,   dLevel);
-    const dSpDef = calcStat(defender.baseSpDef, dLevel);
-    const A = Math.max(aAtk, aSpAtk), D = aAtk >= aSpAtk ? dDef : dSpDef;
+  // If all moves deal 0 (full immunity), use Struggle: 35BP physical, but keep eff=0 so
+  // damage is heavily reduced (multiplied by 0 then floored to 1). Never bypass immunities.
+  if (!bestResult) {
+    const A = Math.max(calcStat(attacker.baseAtk, aLevel), calcStat(attacker.baseSpAtk, aLevel));
+    const D = calcStat(defender.baseDef, dLevel);
     const dmgBase = Math.floor(((2 * aLevel / 5 + 2) * 35 * A / D) / 50) + 2;
-    return { type: "normal", isPhys: aAtk >= aSpAtk, eff: 1, A, D, dmgBase, isStruggle: true };
+    return { type: "normal", isPhys: true, eff: 0.25, A, D, dmgBase, isStruggle: true };
   }
   return bestResult;
 }
@@ -167,10 +165,20 @@ const RESISTS = {
   steel:["normal","grass","ice","flying","psychic","bug","rock","dragon","steel","fairy"],
   fairy:["fighting","bug","dark"],
 };
+// IMMUNE[defenderType] = list of attacker types that have NO effect
 const IMMUNE = {
-  normal:["ghost"],electric:["ground"],flying:["ground"],ghost:["normal","fighting"],
-  dragon:["fairy"],dark:["psychic"],steel:["poison"],fairy:["dragon"],
+  ground:  ["electric"],         // ground immune to electric
+  ghost:   ["normal","fighting"],// ghost immune to normal and fighting
+  normal:  ["ghost"],            // normal immune to ghost
+  flying:  [],                   // flying has no immunities AS DEFENDER (it's immune to ground as attacker)
+  dark:    ["psychic"],          // dark immune to psychic
+  steel:   ["poison"],           // steel immune to poison
+  fairy:   ["dragon"],           // fairy immune to dragon
 };
+// Ground-immune-to-electric means: when defender has Ground type, Electric attacks do nothing.
+// Flying-immune-to-ground means: when defender has Flying type, Ground attacks do nothing.
+// We need to add flying's ground immunity here:
+IMMUNE["flying"] = ["ground"];
 function effectiveness(atkType, defTypes) {
   let m = 1;
   for (const dt of defTypes) {
@@ -286,6 +294,8 @@ const REGIONS = {
       {type:"route",  name:"Route 22",            level:48, pool:[29,32,56,104,111],legendary:true},
       {type:"route",  name:"Route 23",            level:50, pool:[23,24,66,67,111,112],legendary:true},
       {type:"gym",    name:"Viridian Gym",         level:50, leader:"Giovanni",  badge:"Earth Badge",   team:[{id:111,lv:45},{id:51,lv:42},{id:53,lv:44},{id:112,lv:45},{id:34,lv:50}]},
+      {type:"route",  name:"Route 22 (pre-League)", level:51, pool:[29,32,56,104,111,128],legendary:true},
+      {type:"route",  name:"Victory Road",          level:53, pool:[23,24,66,67,111,112,142],legendary:true},
       {type:"elite4", name:"Elite Four – Lorelei", level:54, leader:"Lorelei",  team:[{id:87,lv:54},{id:91,lv:53},{id:80,lv:54},{id:124,lv:54},{id:131,lv:56}]},
       {type:"elite4", name:"Elite Four – Bruno",   level:56, leader:"Bruno",    team:[{id:95,lv:53},{id:95,lv:55},{id:107,lv:55},{id:106,lv:55},{id:68,lv:56}]},
       {type:"elite4", name:"Elite Four – Agatha",  level:58, leader:"Agatha",   team:[{id:94,lv:54},{id:93,lv:54},{id:94,lv:58},{id:24,lv:56},{id:94,lv:58}]},
@@ -303,30 +313,32 @@ const REGIONS = {
       "Karen":{npc:"karen"},"Lance":{npc:"lance"},
     },
     stages: [
-      {type:"route",  name:"Route 29",            level:5,  pool:[161,163,167,194]},
-      {type:"route",  name:"Route 30",            level:8,  pool:[163,167,177,187]},
+      {type:"route",  name:"Route 29",            level:65,  pool:[161,163,167,194]},
+      {type:"route",  name:"Route 30",            level:65,  pool:[163,167,177,187]},
       {type:"gym",    name:"Violet Gym",           level:9,  leader:"Falkner", badge:"Zephyr Badge",   team:[{id:21,lv:7},{id:22,lv:9}]},
-      {type:"route",  name:"Route 32",            level:13, pool:[60,69,163,187,194]},
-      {type:"route",  name:"Union Cave",          level:15, pool:[41,74,95,104,194]},
+      {type:"route",  name:"Route 32",            level:65, pool:[60,69,163,187,194]},
+      {type:"route",  name:"Union Cave",          level:65, pool:[41,74,95,104,194]},
       {type:"gym",    name:"Azalea Gym",           level:17, leader:"Bugsy",   badge:"Hive Badge",     team:[{id:14,lv:14},{id:11,lv:14},{id:123,lv:16}]},
-      {type:"route",  name:"Ilex Forest",         level:19, pool:[43,44,163,177]},
-      {type:"route",  name:"Route 34",            level:21, pool:[29,32,43,92,186]},
+      {type:"route",  name:"Ilex Forest",         level:65, pool:[43,44,163,177]},
+      {type:"route",  name:"Route 34",            level:65, pool:[29,32,43,92,186]},
       {type:"gym",    name:"Goldenrod Gym",        level:23, leader:"Whitney",  badge:"Plain Badge",    team:[{id:35,lv:18},{id:241,lv:23}]},
-      {type:"route",  name:"Route 36",            level:25, pool:[29,32,48,193,203]},
-      {type:"route",  name:"Route 37",            level:27, pool:[58,163,175,193]},
+      {type:"route",  name:"Route 36",            level:65, pool:[29,32,48,193,203]},
+      {type:"route",  name:"Route 37",            level:65, pool:[58,163,175,193]},
       {type:"gym",    name:"Ecruteak Gym",         level:25, leader:"Morty",    badge:"Fog Badge",      team:[{id:92,lv:21},{id:92,lv:21},{id:93,lv:23},{id:94,lv:25}]},
-      {type:"route",  name:"Route 39",            level:29, pool:[29,32,39,40,241]},
-      {type:"route",  name:"Route 41",            level:31, pool:[72,73,130,170,171]},
+      {type:"route",  name:"Route 39",            level:65, pool:[29,32,39,40,241]},
+      {type:"route",  name:"Route 41",            level:65, pool:[72,73,130,170,171]},
       {type:"gym",    name:"Cianwood Gym",         level:29, leader:"Chuck",    badge:"Storm Badge",    team:[{id:57,lv:27},{id:62,lv:30}]},
-      {type:"route",  name:"Route 42",            level:32, pool:[66,111,177,203,206],legendary:true},
-      {type:"route",  name:"Mt. Mortar",          level:34, pool:[66,74,95,236,246],legendary:true},
+      {type:"route",  name:"Route 42",            level:65, pool:[66,111,177,203,206],legendary:true},
+      {type:"route",  name:"Mt. Mortar",          level:65, pool:[66,74,95,236,246],legendary:true},
       {type:"gym",    name:"Olivine Gym",          level:35, leader:"Jasmine",  badge:"Mineral Badge",  team:[{id:81,lv:30},{id:81,lv:30},{id:208,lv:35}]},
-      {type:"route",  name:"Route 44",            level:37, pool:[62,98,186,213,214],legendary:true},
-      {type:"route",  name:"Ice Path",            level:39, pool:[86,87,220,221,225],legendary:true},
+      {type:"route",  name:"Route 44",            level:65, pool:[62,98,186,213,214],legendary:true},
+      {type:"route",  name:"Ice Path",            level:65, pool:[86,87,220,221,225],legendary:true},
       {type:"gym",    name:"Mahogany Gym",         level:35, leader:"Pryce",    badge:"Glacier Badge",  team:[{id:86,lv:27},{id:87,lv:29},{id:131,lv:31}]},
-      {type:"route",  name:"Route 45",            level:41, pool:[66,74,111,246,247],legendary:true},
-      {type:"route",  name:"Route 46",            level:43, pool:[29,32,56,95,246],legendary:true},
+      {type:"route",  name:"Route 45",            level:65, pool:[66,74,111,246,247],legendary:true},
+      {type:"route",  name:"Route 46",            level:65, pool:[29,32,56,95,246],legendary:true},
       {type:"gym",    name:"Blackthorn Gym",       level:40, leader:"Clair",    badge:"Rising Badge",   team:[{id:130,lv:38},{id:148,lv:38},{id:148,lv:38},{id:230,lv:41}]},
+      {type:"route",  name:"Route 27",             level:65, pool:[29,32,56,95,187,203],legendary:true},
+      {type:"route",  name:"Victory Road",          level:65, pool:[27,28,66,74,111,246],legendary:true},
       {type:"elite4", name:"Elite Four – Will",    level:42, leader:"Will",     team:[{id:178,lv:40},{id:124,lv:41},{id:80,lv:41},{id:103,lv:41},{id:178,lv:42}]},
       {type:"elite4", name:"Elite Four – Koga",    level:44, leader:"Koga",     team:[{id:49,lv:40},{id:110,lv:43},{id:169,lv:41},{id:89,lv:43},{id:49,lv:44}]},
       {type:"elite4", name:"Elite Four – Bruno",   level:46, leader:"Bruno",    team:[{id:95,lv:42},{id:237,lv:41},{id:95,lv:42},{id:106,lv:42},{id:68,lv:46}]},
@@ -344,31 +356,32 @@ const REGIONS = {
       "Drake":{npc:"drake"},"Wallace":{npc:"wallace"},
     },
     stages: [
-      {type:"route",  name:"Route 101",           level:5,  pool:[263,270,273,278,283]},
-      {type:"route",  name:"Route 102",           level:7,  pool:[263,270,273,280,283]},
+      {type:"route",  name:"Route 101",           level:65,  pool:[263,270,273,278,283]},
+      {type:"route",  name:"Route 102",           level:65,  pool:[263,270,273,280,283]},
       {type:"gym",    name:"Rustboro Gym",         level:14, leader:"Roxanne",   badge:"Stone Badge",   team:[{id:74,lv:12},{id:299,lv:14}]},
-      {type:"route",  name:"Route 104",           level:15, pool:[263,278,283,285,287]},
-      {type:"route",  name:"Petalburg Woods",     level:17, pool:[265,270,285,290,313]},
+      {type:"route",  name:"Route 104",           level:65, pool:[263,278,283,285,287]},
+      {type:"route",  name:"Petalburg Woods",     level:65, pool:[265,270,285,290,313]},
       {type:"gym",    name:"Dewford Gym",          level:18, leader:"Brawly",    badge:"Knuckle Badge", team:[{id:66,lv:17},{id:307,lv:17},{id:296,lv:19}]},
-      {type:"route",  name:"Route 110",           level:20, pool:[263,270,278,283,311,312]},
-      {type:"route",  name:"Route 117",           level:22, pool:[270,285,300,303,307]},
+      {type:"route",  name:"Route 110",           level:65, pool:[263,270,278,283,311,312]},
+      {type:"route",  name:"Route 117",           level:65, pool:[270,285,300,303,307]},
       {type:"gym",    name:"Mauville Gym",         level:24, leader:"Wattson",   badge:"Dynamo Badge",  team:[{id:309,lv:20},{id:82,lv:22},{id:310,lv:24}]},
-      {type:"route",  name:"Route 112",           level:26, pool:[278,290,322,327,331]},
-      {type:"route",  name:"Mt. Chimney",         level:28, pool:[322,324,331,335,338]},
+      {type:"route",  name:"Route 112",           level:65, pool:[278,290,322,327,331]},
+      {type:"route",  name:"Mt. Chimney",         level:65, pool:[322,324,331,335,338]},
       {type:"gym",    name:"Lavaridge Gym",        level:29, leader:"Flannery",  badge:"Heat Badge",    team:[{id:218,lv:24},{id:219,lv:26},{id:322,lv:26},{id:324,lv:29}]},
-      {type:"route",  name:"Route 102 return",    level:30, pool:[270,280,283,285,300]},
-      {type:"route",  name:"Route 118",           level:32, pool:[278,283,300,341,349]},
+      {type:"route",  name:"Route 102 return",    level:65, pool:[270,280,283,285,300]},
+      {type:"route",  name:"Route 118",           level:65, pool:[278,283,300,341,349]},
       {type:"gym",    name:"Petalburg Gym",        level:31, leader:"Norman",    badge:"Balance Badge", team:[{id:327,lv:27},{id:288,lv:27},{id:264,lv:29},{id:289,lv:31}]},
-      {type:"route",  name:"Route 119",           level:33, pool:[278,283,285,315,331,352]},
-      {type:"route",  name:"Route 120",           level:35, pool:[283,315,352,354,357]},
+      {type:"route",  name:"Route 119",           level:65, pool:[278,283,285,315,331,352]},
+      {type:"route",  name:"Route 120",           level:65, pool:[283,315,352,354,357]},
       {type:"gym",    name:"Fortree Gym",          level:33, leader:"Winona",    badge:"Feather Badge", team:[{id:277,lv:29},{id:279,lv:30},{id:227,lv:31},{id:334,lv:33}]},
-      {type:"route",  name:"Route 121",           level:37, pool:[278,300,315,331,352,363]},
-      {type:"route",  name:"Safari Zone",         level:39, pool:[283,315,334,357,363,371],legendary:true},
+      {type:"route",  name:"Route 121",           level:65, pool:[278,300,315,331,352,363]},
+      {type:"route",  name:"Safari Zone",         level:65, pool:[283,315,334,357,363,371],legendary:true},
       {type:"gym",    name:"Mossdeep Gym",         level:42, leader:"Tate & Liza",badge:"Mind Badge",  team:[{id:344,lv:41},{id:178,lv:41},{id:337,lv:42},{id:338,lv:42}]},
-      {type:"route",  name:"Route 124",           level:43, pool:[283,318,320,341,349,369],legendary:true},
-      {type:"route",  name:"Seafloor Cavern",     level:45, pool:[304,318,339,340,366,369],legendary:true},
+      {type:"route",  name:"Route 124",           level:65, pool:[283,318,320,341,349,369],legendary:true},
+      {type:"route",  name:"Seafloor Cavern",     level:65, pool:[304,318,339,340,366,369],legendary:true},
       {type:"gym",    name:"Sootopolis Gym",       level:46, leader:"Juan",      badge:"Rain Badge",    team:[{id:370,lv:41},{id:340,lv:41},{id:364,lv:43},{id:342,lv:43},{id:230,lv:46}]},
-      {type:"route",  name:"Victory Road",        level:48, pool:[304,335,338,357,371,373],legendary:true},
+      {type:"route",  name:"Route 128",           level:65, pool:[318,319,320,321,349,369],legendary:true},
+      {type:"route",  name:"Victory Road",        level:65, pool:[304,335,338,357,371,373],legendary:true},
       {type:"elite4", name:"Elite Four – Sidney",  level:46, leader:"Sidney",    team:[{id:262,lv:46},{id:332,lv:46},{id:275,lv:48},{id:359,lv:49},{id:319,lv:48}]},
       {type:"elite4", name:"Elite Four – Phoebe",  level:48, leader:"Phoebe",    team:[{id:356,lv:48},{id:354,lv:49},{id:302,lv:50},{id:354,lv:49},{id:356,lv:51}]},
       {type:"elite4", name:"Elite Four – Glacia",  level:50, leader:"Glacia",    team:[{id:364,lv:50},{id:362,lv:50},{id:364,lv:52},{id:362,lv:52},{id:365,lv:53}]},
@@ -952,10 +965,11 @@ export default function App() {
   function levelUpParty(currentParty, toLevel) {
     const evolved = [];
     const result = currentParty.map(p => {
-      const ev = getPokemonAtLevel(p.baseId||p.id, toLevel, p.eeveeKey);
-      if (!ev) return {...p, level:toLevel};
+      // NEVER level down — preserve current level if toLevel is lower
+      const effectiveLevel = Math.max(toLevel, p.level || 1);
+      const ev = getPokemonAtLevel(p.baseId||p.id, effectiveLevel, p.eeveeKey);
+      if (!ev) return {...p, level:effectiveLevel};
       if (ev.id !== p.id) evolved.push(ev.id);
-      // Spread p first so heldItem, nickname, and all extra fields are preserved
       return {...p, ...ev, baseId:p.baseId||p.id, eeveeKey:p.eeveeKey, heldItem:p.heldItem};
     });
     if (evolved.length) {
@@ -1015,7 +1029,7 @@ export default function App() {
     }
     // Apply randomizer to pool
     pool = pool.map(id => rand(id));
-    const cr = (isLeg,si2) => isLeg?0.05:Math.max(0.55,0.80-(si2/region.stages.length)*0.25);
+    const cr = (isLeg,si2) => isLeg?0.50:Math.max(0.55,0.80-(si2/region.stages.length)*0.25);
     setEncounterOpts(pool.map(id=>{ const p=getPokemonAtLevel(id,s.level); return p?{...p,catchChance:cr(!!p.legendary,stageIdx)}:null; }).filter(Boolean));
   }
 
@@ -1424,9 +1438,9 @@ export default function App() {
 
       {battleFrames.length>0&&(<>
         <BattleArena frames={battleFrames} playerTeam={battlePlayerTeam} enemyTeam={battleEnemyTeam} badgeInfo={stage.badge?{badge:stage.badge}:null} onDone={()=>setBattleAnimDone(true)}/>
-        {battleDone&&battleAnimDone&&<div style={{ marginTop:16 }}>
+        {battleDone&&<div style={{ marginTop:16 }}>
           <div style={{ fontWeight:800, fontSize:22, color:battleDone.won?"#16A34A":"#E53935", marginBottom:12 }}>{battleDone.won?"🎉 Victory!":"💀 Defeated."}</div>
-          <button onClick={afterBattle} style={{ padding:"13px 28px", background:battleDone.won?"#16A34A":"#E53935", color:"#fff", border:"none", borderRadius:10, fontWeight:700, fontSize:14, cursor:"pointer" }}>{battleDone.won?"Continue →":"See Results"}</button>
+          <button onClick={()=>{ setBattleFrames([]); setBattleAnimDone(false); afterBattle(); }} style={{ padding:"13px 28px", background:battleDone.won?"#16A34A":"#E53935", color:"#fff", border:"none", borderRadius:10, fontWeight:700, fontSize:14, cursor:"pointer" }}>{battleDone.won?"Continue →":"See Results"}</button>
         </div>}
       </>)}
     </div>}
